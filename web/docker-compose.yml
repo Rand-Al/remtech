@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:17
+    container_name: remtech-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: remtech
+      POSTGRES_PASSWORD: remtech
+      POSTGRES_DB: remtech
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U remtech -d remtech"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db-data:
