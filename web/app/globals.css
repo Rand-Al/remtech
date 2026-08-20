@@ -2835,7 +2835,7 @@ h1 {
   width: 100%;
   min-height: 40px;
   max-height: 110px;
-  overflow-y: auto;
+  overflow-y: hidden;
   resize: none;
   padding: 9px 11px;
   color: var(--text);

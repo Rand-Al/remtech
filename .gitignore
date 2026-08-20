@@ -9,6 +9,7 @@ web/build/
 # env
 web/.env*
 web/chat-server/.env*
+!web/chat-server/.env.example
 
 # debug / logs
 *.log

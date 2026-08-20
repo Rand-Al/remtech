@@ -53,6 +53,7 @@ export default function ChatPanel({
   );
   const [isTyping, setIsTyping] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const tokenRef = useRef<string | null>(null);
   const greetingShownRef = useRef(false);
   const hydratedRef = useRef(false);
@@ -229,6 +230,28 @@ export default function ChatPanel({
   }, [isOpen]);
 
   useEffect(() => {
+    if (!isOpen || isMobileModal) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target) return;
+      if (!panel.contains(target) && !target.closest("[data-open-chat]")) {
+        close();
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isOpen, isMobileModal, close]);
+
+  useEffect(() => {
     const buttons = document.querySelectorAll<HTMLButtonElement>("[data-open-chat]");
     const onClick = (event: Event) => {
       const button = event.currentTarget as HTMLButtonElement;
@@ -251,6 +274,7 @@ export default function ChatPanel({
       </button>
 
       <section
+        ref={panelRef}
         className={`chat-panel${isOpen ? " is-open" : ""}`}
         role="dialog"
         aria-modal={isMobileModal}
@@ -284,16 +308,16 @@ export default function ChatPanel({
           {state === "idle" && (
             <p className="connection-message">З’єднуємо з менеджером RemTech...</p>
           )}
-          {isTyping && (
-            <p className="message manager typing" aria-label="Менеджер друкує">
-              <span></span><span></span><span></span>
-            </p>
-          )}
           {messages.map((message) => (
             <p key={message.id} className={`message ${message.sender}`}>
               {message.text}
             </p>
           ))}
+          {isTyping && (
+            <p className="message manager typing" aria-label="Менеджер друкує">
+              <span></span><span></span><span></span>
+            </p>
+          )}
         </div>
 
         <form className="chat-compose" onSubmit={send}>
