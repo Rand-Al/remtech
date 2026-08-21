@@ -1,0 +1,243 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  asksAboutPrice,
+  detectServiceFromText,
+  describesImmediateElectricalHazard,
+  expressesCostConcern,
+  expressesUrgency,
+  explicitlyAcceptsTerms,
+  extractContactAnswer,
+  extractExplicitLocation,
+  getLocationAnswer,
+  getTermsDecision,
+  hasInvalidPhoneCandidate,
+  hasExactAddress,
+  hasLocationAnswer,
+  isAwaitingLocation,
+  isValidUkrainianPhone,
+  normalizeManagerReply,
+  requestsTechnicianVisit,
+  shouldAskExactAddress,
+} from "./conversation.js";
+
+test("normalizes accidental spacing in manager replies", () => {
+  assert.equal(
+    normalizeManagerReply("С собаками не поможем.  У вас что-то сломалось ? "),
+    "С собаками не поможем. У вас что-то сломалось?"
+  );
+});
+
+const COMPLETE_FIRST_MESSAGE =
+  "Стиральная машина Samsung не сливает воду. Нахожусь в Броварах, улица Киевская 34. Меня зовут Андрей, телефон 050 123 45 67. С платным выездом и диагностикой согласен.";
+
+test("extracts a complete request from the first client message", () => {
+  assert.equal(detectServiceFromText(COMPLETE_FIRST_MESSAGE), "washer");
+  assert.equal(
+    extractExplicitLocation(COMPLETE_FIRST_MESSAGE),
+    "Броварах, улица Киевская 34"
+  );
+  assert.equal(hasExactAddress(COMPLETE_FIRST_MESSAGE), true);
+  assert.deepEqual(extractContactAnswer(COMPLETE_FIRST_MESSAGE, ""), {
+    name: "Андрей",
+    phone: "050 123 45 67",
+  });
+  assert.equal(explicitlyAcceptsTerms(COMPLETE_FIRST_MESSAGE), true);
+});
+
+test("does not treat a refusal as voluntary acceptance of payment terms", () => {
+  assert.equal(
+    explicitlyAcceptsTerms("С платным выездом и диагностикой не согласен"),
+    false
+  );
+});
+
+test("updates the requested service when the client names different equipment", () => {
+  assert.equal(detectServiceFromText("дымит посудомойка"), "dishwasher");
+  assert.equal(detectServiceFromText("нужна чистка котла"), "boiler-cleaning");
+  assert.equal(detectServiceFromText("она выключена"), null);
+});
+
+test("accepts only complete Ukrainian phone numbers", () => {
+  assert.equal(isValidUkrainianPhone("050 123 45 67"), true);
+  assert.equal(isValidUkrainianPhone("+380 50 123 45 67"), true);
+  assert.equal(isValidUkrainianPhone("045958568"), false);
+  assert.equal(hasInvalidPhoneCandidate("Наталья 045958568"), true);
+  assert.deepEqual(
+    extractContactAnswer("Наталья 045958568", "Как к вам обращаться? И номер телефона?"),
+    { name: "Наталья", phone: undefined }
+  );
+});
+
+test("recognizes questions about diagnostic price", () => {
+  assert.equal(asksAboutPrice("а сколько стоит диагностика?"), true);
+  assert.equal(asksAboutPrice("Яка вартість діагностики?"), true);
+  assert.equal(asksAboutPrice("а сколько стоить будет?"), true);
+  assert.equal(asksAboutPrice("диагностика оплачивается отдельно?"), false);
+});
+
+test("recognizes repeated urgency without treating it as consent", () => {
+  assert.equal(expressesUrgency("срочно ехать"), true);
+  assert.equal(expressesUrgency("потрібно якомога швидше"), true);
+  assert.equal(expressesUrgency("да, подходит"), false);
+});
+
+test("recognizes a client's concern about affording the repair", () => {
+  assert.equal(expressesCostConcern("не знаю даже, а вдруг у меня денег не хватит"), true);
+  assert.equal(expressesCostConcern("боюсь, что будет дорого"), true);
+  assert.equal(expressesCostConcern("да, подходит"), false);
+});
+
+test("recognizes a direct request for a technician visit", () => {
+  assert.equal(requestsTechnicianVisit("не работает, просто приедьте"), true);
+  assert.equal(requestsTechnicianVisit("вызовите мастера"), true);
+  assert.equal(requestsTechnicianVisit("не приезжайте"), false);
+});
+
+test("extracts a name after the manager asks for contact details", () => {
+  assert.deepEqual(
+    extractContactAnswer(
+      "Андрей",
+      "Как к вам обращаться? И оставьте, пожалуйста, номер телефона для связи."
+    ),
+    { name: "Андрей", phone: undefined }
+  );
+});
+
+test("extracts a name and phone from one contact answer", () => {
+  assert.deepEqual(
+    extractContactAnswer("Меня зовут Андрей, 050 123 45 67", "Как к вам обращаться?"),
+    { name: "Андрей", phone: "050 123 45 67" }
+  );
+});
+
+test("does not mistake an ordinary answer for a client name", () => {
+  assert.deepEqual(extractContactAnswer("самсунг", "Какая марка?"), {
+    phone: undefined,
+  });
+});
+
+test("detects smoke, sparking, and burning smell without treating an indicator light as a hazard", () => {
+  assert.equal(describesImmediateElectricalHazard("дымит посудомойка"), true);
+  assert.equal(describesImmediateElectricalHazard("пахне горілим"), true);
+  assert.equal(describesImmediateElectricalHazard("из корпуса искры"), true);
+  assert.equal(describesImmediateElectricalHazard("горит лампочка ошибки"), false);
+});
+
+test("recognizes that the client answered the settlement question", () => {
+  assert.equal(
+    hasLocationAnswer([
+      { sender: "manager", text: "В каком вы населённом пункте?" },
+      { sender: "client", text: "Скибин" },
+    ]),
+    true
+  );
+});
+
+test("does not mistake an appliance status for a settlement", () => {
+  const messages = [
+    { sender: "manager" as const, text: "В каком вы населённом пункте?" },
+    { sender: "client" as const, text: "я ее выключил" },
+  ];
+  assert.equal(hasLocationAnswer(messages), false);
+  assert.equal(getLocationAnswer(messages), null);
+  assert.equal(isAwaitingLocation(messages), true);
+});
+
+test("asks for an exact address after the client names only the city", () => {
+  assert.equal(
+    shouldAskExactAddress([
+      { sender: "manager", text: "Який населений пункт?" },
+      { sender: "client", text: "Бровари" },
+    ]),
+    true
+  );
+});
+
+test("does not ask again when street and building number are present", () => {
+  assert.equal(hasExactAddress("вул. Київська, 12"), true);
+  assert.equal(
+    shouldAskExactAddress([
+      { sender: "manager", text: "Який населений пункт?" },
+      { sender: "client", text: "Бровари, вул. Київська, 12" },
+    ]),
+    false
+  );
+});
+
+test("does not mistake an error code or phone for an address", () => {
+  assert.equal(hasExactAddress("помилка E43"), false);
+  assert.equal(hasExactAddress("Віталій 0453338577"), false);
+});
+
+test("does not repeat the exact address question after the client answered it", () => {
+  assert.equal(
+    shouldAskExactAddress([
+      { sender: "manager", text: "Який населений пункт?" },
+      { sender: "client", text: "Бровари" },
+      { sender: "manager", text: "Підкажіть, будь ласка, точну адресу: вулицю та номер будинку." },
+      { sender: "client", text: "номер будинку поки не знаю" },
+    ]),
+    false
+  );
+});
+
+test("asks for the exact address again after a price-question detour", () => {
+  assert.equal(
+    shouldAskExactAddress([
+      { sender: "manager", text: "В каком вы населённом пункте?" },
+      { sender: "client", text: "Бровары" },
+      { sender: "manager", text: "Напишите улицу и номер дома." },
+      { sender: "client", text: "а сколько стоит диагностика?" },
+      { sender: "manager", text: "Стоимость диагностики уточняется индивидуально." },
+      { sender: "client", text: "ок" },
+    ]),
+    true
+  );
+});
+
+test("requires an explicit answer after payment terms are shown", () => {
+  assert.equal(
+    getTermsDecision([
+      {
+        sender: "manager",
+        text: "Выезд и диагностика оплачиваются отдельно. Вам подходит такой формат?",
+      },
+      { sender: "client", text: "а сколько будет стоить ремонт?" },
+    ]),
+    "unclear"
+  );
+});
+
+test("recognizes explicit acceptance of payment terms", () => {
+  assert.equal(
+    getTermsDecision([
+      {
+        sender: "manager",
+        text: "Виїзд і діагностика оплачуються окремо. Вам підходить такий формат?",
+      },
+      { sender: "client", text: "так, підходить" },
+    ]),
+    "accepted"
+  );
+});
+
+test("recognizes explicit refusal of payment terms before positive words", () => {
+  assert.equal(
+    getTermsDecision([
+      {
+        sender: "manager",
+        text: "Выезд и диагностика оплачиваются отдельно. Вам подходит такой формат?",
+      },
+      { sender: "client", text: "нет, мне не подходит" },
+    ]),
+    "declined"
+  );
+});
+
+test("does not infer consent before the terms question", () => {
+  assert.equal(
+    getTermsDecision([{ sender: "client", text: "хорошо" }]),
+    "not-asked"
+  );
+});

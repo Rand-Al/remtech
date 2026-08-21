@@ -7,6 +7,7 @@ export interface ChatMessage {
 
 export interface LlmResponse {
   content: string;
+  model?: string;
 }
 
 export interface LlmAdapter {

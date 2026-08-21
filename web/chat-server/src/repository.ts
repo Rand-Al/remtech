@@ -114,21 +114,25 @@ export interface RequestDetails {
   clientId: number;
   number: string;
   service: string;
+  symptom: string | null;
   status: string;
   name: string | null;
   phone: string | null;
   location: string | null;
   urgency: string | null;
   lang: string;
+  termsAccepted: boolean;
   telegramNotified: boolean;
+  attachmentCount: number;
 }
 
 export async function getRequestDetails(
   token: string
 ): Promise<RequestDetails | null> {
   const result = await pool.query(
-    `SELECT r.id, r.client_id, r.number, r.service, r.status, r.location, r.urgency,
-            r.lang, r.telegram_notified, c.name, c.phone
+    `SELECT r.id, r.client_id, r.number, r.service, r.symptom, r.status, r.location, r.urgency,
+            r.lang, r.terms_accepted, r.telegram_notified, c.name, c.phone,
+            (SELECT COUNT(*) FROM attachments a WHERE a.request_id = r.id) AS attachment_count
        FROM requests r
        JOIN clients c ON c.id = r.client_id
       WHERE r.token = $1`,
@@ -141,14 +145,47 @@ export async function getRequestDetails(
     clientId: Number(row.client_id),
     number: row.number as string,
     service: row.service as string,
+    symptom: (row.symptom as string | null) ?? null,
     status: row.status as string,
     name: (row.name as string | null) ?? null,
     phone: (row.phone as string | null) ?? null,
     location: (row.location as string | null) ?? null,
     urgency: (row.urgency as string | null) ?? null,
     lang: (row.lang as string) ?? "uk",
+    termsAccepted: Boolean(row.terms_accepted),
     telegramNotified: Boolean(row.telegram_notified),
+    attachmentCount: Number(row.attachment_count),
   };
+}
+
+export async function updateRequestTermsAccepted(
+  requestId: string,
+  accepted: boolean
+): Promise<void> {
+  await pool.query(
+    "UPDATE requests SET terms_accepted = $1, updated_at = now() WHERE id = $2",
+    [accepted, requestId]
+  );
+}
+
+export async function updateRequestService(
+  requestId: string,
+  service: string
+): Promise<void> {
+  await pool.query(
+    "UPDATE requests SET service = $1, updated_at = now() WHERE id = $2",
+    [service, requestId]
+  );
+}
+
+export async function updateRequestLocation(
+  requestId: string,
+  location: string
+): Promise<void> {
+  await pool.query(
+    "UPDATE requests SET location = $1, updated_at = now() WHERE id = $2",
+    [location, requestId]
+  );
 }
 
 export async function updateClientContact(
@@ -189,6 +226,48 @@ export async function saveMessage(
     id: String(row.id),
     sender: row.sender as "client" | "manager",
     text: row.text as string,
+  };
+}
+
+export async function saveAttachment(
+  requestId: string,
+  messageId: string,
+  filePath: string,
+  mimeType: string,
+  sizeBytes: number
+): Promise<{ id: string }> {
+  const result = await pool.query(
+    `INSERT INTO attachments (request_id, message_id, file_path, mime_type, size_bytes)
+     SELECT $1, m.id, $3, $4, $5
+       FROM messages m
+      WHERE m.id = $2
+        AND m.request_id = $1
+        AND (SELECT count(*) FROM attachments a WHERE a.message_id = m.id) < 3
+     RETURNING id`,
+    [requestId, messageId, filePath, mimeType, sizeBytes]
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error("Attachment limit reached or message does not belong to request");
+  return { id: String(row.id) };
+}
+
+export async function getAttachmentByToken(
+  attachmentId: string,
+  token: string
+): Promise<{ filePath: string; mimeType: string; sizeBytes: number } | null> {
+  const result = await pool.query(
+    `SELECT a.file_path, a.mime_type, a.size_bytes
+       FROM attachments a
+       JOIN requests r ON r.id = a.request_id
+      WHERE a.id = $1 AND r.token = $2`,
+    [attachmentId, token]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    filePath: row.file_path as string,
+    mimeType: (row.mime_type as string | null) ?? "application/octet-stream",
+    sizeBytes: Number(row.size_bytes),
   };
 }
 

@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { formatPrice, getPriceItem } from "@/shared/pricing";
+
+const brovaryVisitPrice = formatPrice(getPriceItem("visit-brovary").value, "uk");
+const boilerDiagnosticPrice = formatPrice(getPriceItem("boiler-diagnostics").value, "uk");
 
 const FAQ_ITEMS = [
   {
@@ -26,7 +30,7 @@ const FAQ_ITEMS = [
   {
     question: "Скільки коштують виїзд і діагностика?",
     answer:
-      "Виїзд і діагностика оплачуються окремо. Вартість залежить від виду техніки та адреси й узгоджується до виїзду.",
+      `Виїзд у Броварах — ${brovaryVisitPrice}, діагностика двоконтурного котла — ${boilerDiagnosticPrice}. Для іншої техніки та населених пунктів вартість узгоджується до виїзду.`,
   },
   {
     question: "Коли буде відома вартість ремонту?",

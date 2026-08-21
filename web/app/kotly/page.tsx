@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import ChatPanel from "@/components/ChatPanel";
+import PricingSection from "@/components/PricingSection";
 
 export const metadata: Metadata = {
   title: "Ремонт та обслуговування котлів у Броварах — RemTech",
@@ -184,6 +185,8 @@ export default function KotlyPage() {
             </article>
           </div>
         </section>
+
+        <PricingSection />
 
         <aside className="boiler-safety" id="safety" aria-labelledby="boiler-safety-title">
           <div>

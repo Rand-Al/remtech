@@ -12,6 +12,7 @@ web/.env.*
 web/chat-server/.env
 web/chat-server/.env.*
 !web/chat-server/.env.example
+web/chat-server/data/uploads/
 
 # debug / logs
 *.log

@@ -2760,6 +2760,39 @@ h1 {
   border-top-right-radius: 3px;
 }
 
+.message.has-attachments {
+  padding: 5px;
+}
+
+.message.has-attachments > span {
+  display: block;
+  padding: 6px 8px;
+}
+
+.message-attachments {
+  width: min(240px, 62vw);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.message-attachments a:only-child {
+  grid-column: 1 / -1;
+}
+
+.message-attachments img {
+  width: 100%;
+  height: 112px;
+  display: block;
+  object-fit: cover;
+  border-radius: 5px;
+}
+
+.message-attachments a:only-child img {
+  height: auto;
+  max-height: 240px;
+}
+
 .typing {
   display: inline-flex;
   gap: 4px;
@@ -2823,12 +2856,64 @@ h1 {
 .chat-compose {
   min-height: 64px;
   display: grid;
-  grid-template-columns: 1fr 40px;
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
   align-items: end;
   gap: 8px;
   padding: 10px 12px;
   background: #ffffff;
   border-top: 1px solid var(--line);
+}
+
+.photo-preview-list,
+.photo-upload-error {
+  grid-column: 1 / -1;
+}
+
+.photo-preview-list {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+}
+
+.photo-preview {
+  position: relative;
+  flex: 0 0 58px;
+  width: 58px;
+  height: 58px;
+}
+
+.photo-preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+.photo-preview button {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: #ffffff;
+  background: #202725;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.photo-upload-error {
+  margin: 0;
+  color: #9a3412;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .chat-compose textarea {
@@ -2858,14 +2943,44 @@ h1 {
 }
 
 .attach-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
   color: var(--text);
-  background: transparent;
-  font-size: 23px;
+  background: #f6f8f7;
+  border: 1px solid #d8dddb;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.attach-button:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.attach-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.attach-input:disabled {
+  cursor: not-allowed;
 }
 
 .send-button {
   font-size: 20px;
   font-weight: 800;
+}
+
+.attach-button.is-disabled,
+.send-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .sr-only {
