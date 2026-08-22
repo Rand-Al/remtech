@@ -58,7 +58,7 @@ export class OpenAiCompatibleLlmAdapter implements LlmAdapter {
       const currentModel = remainingModels[0];
       const remainingTime = deadline - Date.now();
       if (remainingTime <= 0) {
-        throw new Error("LLM fallback chain timed out");
+        throw new Error("Истекло время ожидания резервной цепочки LLM");
       }
 
       let result: Awaited<ReturnType<typeof this.requestCompletion>>;
@@ -80,9 +80,9 @@ export class OpenAiCompatibleLlmAdapter implements LlmAdapter {
         console.warn(
           "[llm] " +
             currentModel +
-            " failed after " +
+            " завершилась ошибкой через " +
             (Date.now() - startedAt) +
-            "ms; using fallback"
+            " мс; используется резервная модель"
         );
         remainingModels = remainingModels.slice(1);
         continue;
@@ -93,9 +93,9 @@ export class OpenAiCompatibleLlmAdapter implements LlmAdapter {
         console.info(
           "[llm] " +
             (result.model ?? currentModel) +
-            " responded in " +
+            " ответила за " +
             (Date.now() - startedAt) +
-            "ms"
+            " мс"
         );
         return { content, model: result.model };
       }

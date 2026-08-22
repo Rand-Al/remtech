@@ -2,6 +2,7 @@ import type { LlmAdapter } from "./llm/adapter.js";
 import { StubLlmAdapter } from "./llm/stub.js";
 import { OpenAiCompatibleLlmAdapter } from "./llm/openai.js";
 import type { TelegramAdapter } from "./telegram/adapter.js";
+import { TelegramBotAdapter } from "./telegram/bot.js";
 import { StubTelegramAdapter } from "./telegram/stub.js";
 
 const DEFAULT_OPENROUTER_FALLBACKS = [
@@ -29,6 +30,12 @@ function parseModelList(value: string | undefined): string[] {
 function parseOptionalBoolean(value: string | undefined): boolean | undefined {
   if (value === undefined || value.trim() === "") return undefined;
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+function parseOptionalPositiveInteger(value: string | undefined): number | undefined {
+  if (!value?.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 export function createLlmAdapter(): LlmAdapter {
@@ -60,5 +67,28 @@ export function createLlmAdapter(): LlmAdapter {
 }
 
 export function createTelegramAdapter(): TelegramAdapter {
+  const token = process.env.RT_TELEGRAM_BOT_TOKEN?.trim();
+  const chatId = process.env.RT_TELEGRAM_CHAT_ID?.trim();
+  if (token && chatId) {
+    return new TelegramBotAdapter({
+      token,
+      chatId,
+      requestsThreadId: parseOptionalPositiveInteger(
+        process.env.RT_TELEGRAM_REQUESTS_THREAD_ID
+      ),
+      technicalThreadId: parseOptionalPositiveInteger(
+        process.env.RT_TELEGRAM_TECHNICAL_THREAD_ID
+      ),
+      perRequestTopics:
+        process.env.RT_TELEGRAM_PER_REQUEST_TOPICS?.trim().toLowerCase() === "true",
+      timeoutMs: Number(process.env.RT_TELEGRAM_TIMEOUT_MS ?? 10_000),
+    });
+  }
+
+  if (token || chatId) {
+    console.warn(
+      "Адаптер Telegram отключён: нужны RT_TELEGRAM_BOT_TOKEN и RT_TELEGRAM_CHAT_ID"
+    );
+  }
   return new StubTelegramAdapter();
 }

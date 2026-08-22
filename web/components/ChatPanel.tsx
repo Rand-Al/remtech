@@ -90,11 +90,15 @@ export default function ChatPanel({
   const [isSending, setIsSending] = useState(false);
   const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([]);
   const [uploadError, setUploadError] = useState("");
+  const [chatToken, setChatToken] = useState<string | null>(null);
+  const [lastHumanMessageId, setLastHumanMessageId] = useState("0");
   const bodyRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const tokenRef = useRef<string | null>(null);
+  const lastHumanMessageIdRef = useRef("0");
+  const humanPollBusyRef = useRef(false);
   const greetingShownRef = useRef(false);
   const hydratedRef = useRef(false);
   const connectionStartedRef = useRef(false);
@@ -131,6 +135,7 @@ export default function ChatPanel({
         messages?: ChatMessage[];
         token?: string | null;
         selectedService?: string | null;
+        lastHumanMessageId?: string;
       };
       if (Array.isArray(saved.messages)) {
         setMessages(saved.messages);
@@ -142,6 +147,11 @@ export default function ChatPanel({
       }
       if (typeof saved.token === "string" && saved.token) {
         tokenRef.current = saved.token;
+        setChatToken(saved.token);
+      }
+      if (typeof saved.lastHumanMessageId === "string" && /^\d+$/.test(saved.lastHumanMessageId)) {
+        lastHumanMessageIdRef.current = saved.lastHumanMessageId;
+        setLastHumanMessageId(saved.lastHumanMessageId);
       }
       if (typeof saved.selectedService === "string") {
         setSelectedService(saved.selectedService);
@@ -159,12 +169,66 @@ export default function ChatPanel({
           messages,
           token: tokenRef.current,
           selectedService,
+          lastHumanMessageId,
         })
       );
     } catch {
       // storage unavailable
     }
-  }, [messages, selectedService]);
+  }, [messages, selectedService, lastHumanMessageId]);
+
+  useEffect(() => {
+    if (!chatToken) return;
+    let stopped = false;
+
+    const poll = async () => {
+      if (humanPollBusyRef.current || stopped) return;
+      humanPollBusyRef.current = true;
+      try {
+        const response = await fetch(
+          `${CHAT_SERVER_URL}/api/messages?token=${encodeURIComponent(chatToken)}&after=${encodeURIComponent(lastHumanMessageIdRef.current)}`,
+          { cache: "no-store" }
+        );
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          messages?: Array<{ id: string; sender: "manager"; text: string }>;
+        };
+        for (const message of data.messages ?? []) {
+          if (stopped) return;
+          await wait(getThinkingDelay());
+          if (stopped) return;
+          typingCountRef.current += 1;
+          setIsTyping(true);
+          try {
+            await wait(getTypingDelay(message.text));
+            if (stopped) return;
+            setMessages((current) => {
+              const id = `telegram-${message.id}`;
+              if (current.some((item) => item.id === id)) return current;
+              return [...current, { id, sender: "manager", text: message.text }];
+            });
+            lastHumanMessageIdRef.current = message.id;
+            setLastHumanMessageId(message.id);
+          } finally {
+            typingCountRef.current = Math.max(0, typingCountRef.current - 1);
+            setIsTyping(typingCountRef.current > 0);
+          }
+        }
+      } catch {
+        // Следующая проверка повторит запрос без вмешательства клиента.
+      } finally {
+        humanPollBusyRef.current = false;
+      }
+    };
+
+    void poll();
+    const interval = window.setInterval(() => void poll(), 2_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+      humanPollBusyRef.current = false;
+    };
+  }, [chatToken]);
 
   const open = useCallback((service?: string | null) => {
     if (service) setSelectedService(service);
@@ -189,14 +253,22 @@ export default function ChatPanel({
       }),
     })
       .then(async (response) => {
-        const data = (await response.json()) as { text?: string };
-        if (!response.ok || typeof data.text !== "string" || !data.text) {
+        const data = (await response.json()) as {
+          text?: string;
+          waitingForHuman?: boolean;
+        };
+        if (!response.ok) {
           throw new Error("Manager reply unavailable");
         }
-        return data.text;
+        if (data.waitingForHuman && !data.text) {
+          return { kind: "waiting" as const };
+        }
+        if (typeof data.text !== "string" || !data.text) {
+          throw new Error("Manager reply unavailable");
+        }
+        return { kind: "reply" as const, reply: data.text };
       })
-      .then((reply) => ({ reply }))
-      .catch((error: unknown) => ({ error }));
+      .catch((error: unknown) => ({ kind: "error" as const, error }));
 
     await wait(getThinkingDelay());
     typingCountRef.current += 1;
@@ -204,7 +276,8 @@ export default function ChatPanel({
 
     try {
       const result = await replyRequest;
-      if (!("reply" in result)) throw result.error;
+      if (result.kind === "waiting") return;
+      if (result.kind === "error") throw result.error;
       await wait(getTypingDelay(result.reply));
       setMessages((prev) => [
         ...prev,
@@ -230,10 +303,11 @@ export default function ChatPanel({
 
   const selectPhotos = useCallback((files: FileList | null) => {
     if (!files?.length) return;
+    const selectedFiles = Array.from(files);
     setUploadError("");
     setPendingPhotos((current) => {
       const available = MAX_PHOTOS_PER_MESSAGE - current.length;
-      const selected = Array.from(files).slice(0, Math.max(0, available));
+      const selected = selectedFiles.slice(0, Math.max(0, available));
       const valid: PendingPhoto[] = [];
 
       for (const file of selected) {
@@ -253,7 +327,7 @@ export default function ChatPanel({
         });
       }
 
-      if (files.length > available) {
+      if (selectedFiles.length > available) {
         setUploadError("До одного повідомлення можна додати не більше трьох фото.");
       }
       return [...current, ...valid];
@@ -327,7 +401,10 @@ export default function ChatPanel({
         if (!response.ok || data.error) {
           throw new Error(data.error ?? "Message unavailable");
         }
-        if (data.token) tokenRef.current = data.token;
+        if (data.token) {
+          tokenRef.current = data.token;
+          setChatToken(data.token);
+        }
         const activeToken = tokenRef.current;
         if (!activeToken || !data.messageId) {
           throw new Error("Message identifiers unavailable");
@@ -484,13 +561,14 @@ export default function ChatPanel({
   }, [isOpen, isMobileModal, close]);
 
   useEffect(() => {
-    const buttons = document.querySelectorAll<HTMLButtonElement>("[data-open-chat]");
     const onClick = (event: Event) => {
-      const button = event.currentTarget as HTMLButtonElement;
+      const target = event.target instanceof Element ? event.target : null;
+      const button = target?.closest<HTMLButtonElement>("[data-open-chat]");
+      if (!button) return;
       open(button.dataset.service || null);
     };
-    buttons.forEach((button) => button.addEventListener("click", onClick));
-    return () => buttons.forEach((button) => button.removeEventListener("click", onClick));
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
   }, [open]);
 
   return (

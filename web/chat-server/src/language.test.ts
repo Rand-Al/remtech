@@ -19,6 +19,10 @@ test("switches to Russian on a short request without Russian-specific letters", 
   assert.equal(detectMessageLanguage("тапки ремонтируете?"), "ru");
 });
 
+test("detects an ordinary Russian appliance description", () => {
+  assert.equal(detectMessageLanguage("посудомойка гудит и не моет"), "ru");
+});
+
 test("keeps Russian for neutral location and contact messages", () => {
   const language = detectConversationLanguage([
     { sender: "client", text: "выдает ошибук А01" },
@@ -63,4 +67,14 @@ test("detects a generated Russian reply", () => {
     ),
     "ru"
   );
+});
+
+test("does not switch a Russian conversation because of a photo marker", () => {
+  const language = detectConversationLanguage([
+    { sender: "client", text: "мне нужен человек" },
+    { sender: "manager", text: "Хорошо, приглашу коллегу в чат." },
+    { sender: "client", text: "Клієнт додав фотографію." },
+  ]);
+
+  assert.equal(language, "ru");
 });

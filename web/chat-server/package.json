@@ -9,7 +9,9 @@
     "start": "tsx src/index.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/*.test.ts"
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "telegram:chats": "tsx src/telegram/discover.ts",
+    "telegram:test": "tsx src/telegram/test-connection.ts"
   },
   "dependencies": {
     "@types/node": "^20.19.43",

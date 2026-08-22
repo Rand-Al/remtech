@@ -9,8 +9,9 @@ const RUSSIAN_WORDS = new Set([
   "ремонтируете", "ремонтируешь", "тапки", "обувь",
   "машинка", "машинки", "включу", "осмотра", "мастера",
   "стиралка", "стиралки", "отжимает", "сливает", "набирает", "гремит",
-  "шумит", "течет", "течёт", "протекает", "включается", "выключается",
+  "шумит", "гудит", "моет", "посудомойка", "посудомойки", "течет", "течёт", "протекает", "включается", "выключается",
   "приезжайте", "приедьте", "просто", "выключен", "выключена",
+  "позови", "человек", "и",
 ]);
 
 const UKRAINIAN_WORDS = new Set([
@@ -41,6 +42,9 @@ function scoreMessageLanguage(text: string): { uk: number; ru: number } {
 }
 
 export function detectMessageLanguage(text: string): ChatLanguage | null {
+  if (/^(?:клієнт додав фотографі|клиент добавил фотографи)/iu.test(text.trim())) {
+    return null;
+  }
   const score = scoreMessageLanguage(text);
   if (score.ru >= 3 && score.ru > score.uk) return "ru";
   if (score.uk >= 3 && score.uk > score.ru) return "uk";

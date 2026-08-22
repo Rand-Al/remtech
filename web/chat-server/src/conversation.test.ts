@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   asksAboutPrice,
+  asksIfHumanManager,
+  combineLocationWithAddress,
   detectServiceFromText,
   describesImmediateElectricalHazard,
   expressesCostConcern,
   expressesUrgency,
   explicitlyAcceptsTerms,
   extractContactAnswer,
+  extractDeviceDetailsAnswer,
   extractExplicitLocation,
   getLocationAnswer,
   getTermsDecision,
@@ -15,8 +18,11 @@ import {
   hasExactAddress,
   hasLocationAnswer,
   isAwaitingLocation,
+  isSymptomAnswerExpected,
   isValidUkrainianPhone,
+  mergeRequestSymptom,
   normalizeManagerReply,
+  requestsHumanManager,
   requestsTechnicianVisit,
   shouldAskExactAddress,
 } from "./conversation.js";
@@ -25,6 +31,32 @@ test("normalizes accidental spacing in manager replies", () => {
   assert.equal(
     normalizeManagerReply("С собаками не поможем.  У вас что-то сломалось ? "),
     "С собаками не поможем. У вас что-то сломалось?"
+  );
+});
+
+test("adds a symptom detail after a diagnostic question", () => {
+  const question = "Что именно происходит с машинкой — она не включается или не запускает стирку?";
+  assert.equal(isSymptomAnswerExpected(question), true);
+  assert.equal(
+    mergeRequestSymptom(
+      "не работает стиральная машинка",
+      "не запускает стирку, просто гудит и всё"
+    ),
+    "не работает стиральная машинка. не запускает стирку, просто гудит и всё"
+  );
+});
+
+test("stores a brand answer without inventing a model", () => {
+  assert.equal(
+    extractDeviceDetailsAnswer(
+      "самсунг",
+      "Подскажите марку стиральной машины, если знаете?"
+    ),
+    "самсунг"
+  );
+  assert.equal(
+    extractDeviceDetailsAnswer("модель не знаю", "Какая марка и модель?"),
+    null
   );
 });
 
@@ -92,6 +124,26 @@ test("recognizes a direct request for a technician visit", () => {
   assert.equal(requestsTechnicianVisit("не работает, просто приедьте"), true);
   assert.equal(requestsTechnicianVisit("вызовите мастера"), true);
   assert.equal(requestsTechnicianVisit("не приезжайте"), false);
+});
+
+test("recognizes a request to continue with a human manager", () => {
+  assert.equal(requestsHumanManager("мне нужен человек"), true);
+  assert.equal(requestsHumanManager("надо человек"), true);
+  assert.equal(requestsHumanManager("я знаю что на русском. Надо человек"), true);
+  assert.equal(requestsHumanManager("человек нужен"), true);
+  assert.equal(requestsHumanManager("позови человека"), true);
+  assert.equal(requestsHumanManager("пригласи живого менеджера"), true);
+  assert.equal(requestsHumanManager("покличте живого менеджера"), true);
+  assert.equal(requestsHumanManager("вызовите мастера"), false);
+});
+
+test("recognizes direct questions about whether the manager is human", () => {
+  assert.equal(asksIfHumanManager("ты человек?"), true);
+  assert.equal(asksIfHumanManager("ты разве человек?"), true);
+  assert.equal(asksIfHumanManager("это бот?"), true);
+  assert.equal(asksIfHumanManager("пиздишь, я знаю что ты робот"), true);
+  assert.equal(asksIfHumanManager("я говорю с человеком?"), true);
+  assert.equal(asksIfHumanManager("мне нужен мастер"), false);
 });
 
 test("extracts a name after the manager asks for contact details", () => {
@@ -168,6 +220,17 @@ test("does not ask again when street and building number are present", () => {
 test("does not mistake an error code or phone for an address", () => {
   assert.equal(hasExactAddress("помилка E43"), false);
   assert.equal(hasExactAddress("Віталій 0453338577"), false);
+});
+
+test("combines a saved settlement with the exact address", () => {
+  assert.equal(
+    combineLocationWithAddress("Бровары", "Запорожская 5"),
+    "Бровары, Запорожская 5"
+  );
+  assert.equal(
+    combineLocationWithAddress("Бровары", "Бровары, ул. Киевская 18"),
+    "Бровары, ул. Киевская 18"
+  );
 });
 
 test("does not repeat the exact address question after the client answered it", () => {

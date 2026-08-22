@@ -36,10 +36,19 @@ const TECHNICIAN_VISIT_REQUEST =
   /(?:при(?:ед|їд|езж)|вызов(?:ите|и|у|ем)?\s+мастер|виклич(?:те|емо)?\s+майстр|оформ(?:ите|ить|имо)?\s+(?:выезд|виїзд)|нужен\s+мастер|потрібен\s+майстер)/iu;
 const CANCEL_VISIT_REQUEST =
   /(?:не\s+при(?:ед|їд|езж)|не\s+(?:нужен|потрібен)\s+(?:мастер|майстер)|не\s+(?:оформляйте|оформлюйте)\s+(?:выезд|виїзд))/iu;
+const HUMAN_MANAGER_REQUEST =
+  /(?:(?:нужен|нужна|надо|нужно|хочу|хотим|потрібен|потрібна|треба|хочу)\s+(?:мне\s+|нам\s+|мені\s+|нам\s+)?(?:жив(?:ой|ого|у)?\s+|реальн(?:ый|ого|у)?\s+|справжн(?:ій|ього|ю)?\s+)?(?:человек|оператор|менеджер|людина)|(?:человек|оператор|менеджер|людина)\s+(?:нужен|нужна|надо|нужно|потрібен|потрібна|треба)|(?:позов(?:и|ите)|приглас(?:и|ите)|переключ(?:и|ите)|соедин(?:и|ите)|да(?:й|йте)|поклич(?:те)?|запрос(?:и|іть)|перемкн(?:и|іть)|з['’]?єднай(?:те)?)\s+(?:меня\s+|мне\s+|нас\s+|зі?\s+|с\s+)?(?:жив(?:ой|ого|у)?\s+|реальн(?:ый|ого|у)?\s+|справжн(?:ій|ього|ю)?\s+)?(?:человек|оператор|менеджер|людина)|(?:с\s+человеком|з\s+людиною)\s+(?:поговорить|поговорити)|(?:позов(?:и|ите)|поклич(?:те)?)\s+(?:кого-нибудь|когось))/iu;
+const HUMAN_IDENTITY_QUESTION =
+  /(?:(?:ты|вы|ти|ви)\s+(?:(?:разве|точно|вообще|дійсно|справді|не)\s+)*(?:живой\s+|жива\s+|справжн(?:ій|я)\s+)?(?:человек|людина|бот|робот)|(?:это|це)\s+(?:бот|робот|человек|людина)|(?:я\s+)?(?:говорю|розмовляю)\s+(?:с\s+человеком|з\s+людиною))/iu;
 const NON_LOCATION_ANSWER =
   /(?:выключ|вимк|отключ|відключ|включ|увімк|дым|дим|іскр|искр|работ|прац|кот[её]л|котел|стирал|прал|посудом|машин|техник|сроч|термінов|не\s+знаю|не\s+знаем|не\s+знаємо|^(?:да|нет|так|ні|ок|окей|хорошо|добре)$)/iu;
 const VOLUNTARY_TERMS_ACCEPTANCE =
   /(?=.*(?:виїзд|выезд))(?=.*(?:діагност|диагност))(?=.*(?:згод|соглас|підход|подход))/iu;
+const SYMPTOM_QUESTION =
+  /(?:що\s+саме|что\s+именно|що\s+відбувається|что\s+происходит|як\s+поводиться|как\s+вед[её]т\s+себя|не\s+вмикається|не\s+включается|не\s+запуска)/iu;
+const DEVICE_DETAILS_QUESTION = /(?:марк|бренд|модел)/iu;
+const UNKNOWN_DEVICE_DETAILS =
+  /^(?:(?:марку|марка|модель|моделі|бренд)\s+)?(?:не\s+знаю|не\s+пам['’]?ятаю|не\s+помню|невідомо|неизвестно)[.!]?$/iu;
 
 export type DetectedService =
   | "boiler-repair"
@@ -110,6 +119,34 @@ export function extractContactAnswer(
   return { name, phone };
 }
 
+export function isSymptomAnswerExpected(previousManagerMessage: string): boolean {
+  return SYMPTOM_QUESTION.test(previousManagerMessage) &&
+    !DEVICE_DETAILS_QUESTION.test(previousManagerMessage);
+}
+
+export function extractDeviceDetailsAnswer(
+  text: string,
+  previousManagerMessage: string
+): string | null {
+  if (!DEVICE_DETAILS_QUESTION.test(previousManagerMessage)) return null;
+  const value = text.trim().replace(/\s+/g, " ");
+  if (!value || UNKNOWN_DEVICE_DETAILS.test(value)) return null;
+  return value.slice(0, 300);
+}
+
+export function mergeRequestSymptom(
+  current: string | null | undefined,
+  detail: string
+): string {
+  const existing = current?.trim() ?? "";
+  const addition = detail.trim();
+  if (!existing) return addition.slice(0, 1500);
+  if (!addition || existing.toLocaleLowerCase().includes(addition.toLocaleLowerCase())) {
+    return existing;
+  }
+  return `${existing}. ${addition}`.replace(/\.{2,}/g, ".").slice(0, 1500);
+}
+
 export function describesImmediateElectricalHazard(text: string): boolean {
   return IMMEDIATE_ELECTRICAL_HAZARD.test(text);
 }
@@ -130,6 +167,14 @@ export function requestsTechnicianVisit(text: string): boolean {
   return TECHNICIAN_VISIT_REQUEST.test(text) && !CANCEL_VISIT_REQUEST.test(text);
 }
 
+export function requestsHumanManager(text: string): boolean {
+  return HUMAN_MANAGER_REQUEST.test(text);
+}
+
+export function asksIfHumanManager(text: string): boolean {
+  return HUMAN_IDENTITY_QUESTION.test(text);
+}
+
 export function normalizeManagerReply(text: string): string {
   return text
     .replace(/[ \t]{2,}/g, " ")
@@ -142,6 +187,17 @@ export function hasExactAddress(text: string): boolean {
   const hasBuildingNumber = /\b\d{1,4}(?:\b|[/-])/.test(withoutPhone);
   return (ADDRESS_MARKER.test(withoutPhone) && hasBuildingNumber) ||
     STREET_AND_NUMBER.test(withoutPhone);
+}
+
+export function combineLocationWithAddress(
+  currentLocation: string | null | undefined,
+  addressText: string
+): string {
+  const address = addressText.trim();
+  const current = currentLocation?.trim() ?? "";
+  if (!current || hasExactAddress(current)) return address;
+  if (address.toLocaleLowerCase().includes(current.toLocaleLowerCase())) return address;
+  return `${current}, ${address}`;
 }
 
 export function looksLikeLocationAnswer(text: string): boolean {
