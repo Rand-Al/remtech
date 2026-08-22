@@ -1,4 +1,6 @@
-export default function Footer({ home = false }: { home?: boolean }) {
+type NavVariant = "home" | "kotly" | "service";
+
+export default function Footer({ variant = "service" }: { variant?: NavVariant }) {
   return (
     <footer className="site-footer service-page-footer">
       <div className="footer-brand">
@@ -17,17 +19,26 @@ export default function Footer({ home = false }: { home?: boolean }) {
       </div>
       <nav className="footer-nav" aria-label="Навігація у підвалі">
         <span className="footer-heading">Навігація</span>
-        {home ? (
+        {variant === "home" && (
           <>
             <a href="#services">Послуги</a>
             <a href="#faq">FAQ</a>
             <a href="#contacts">Контакти</a>
           </>
-        ) : (
+        )}
+        {variant === "kotly" && (
           <>
             <a href="/">Головна</a>
             <a href="#directions">Напрями</a>
             <a href="#maintenance">Обслуговування</a>
+            <a href="/#faq">FAQ</a>
+            <a href="/#contacts">Контакти</a>
+          </>
+        )}
+        {variant === "service" && (
+          <>
+            <a href="/">Головна</a>
+            <a href="/#services">Послуги</a>
             <a href="/#faq">FAQ</a>
             <a href="/#contacts">Контакти</a>
           </>

@@ -27,7 +27,7 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <>
-      <Header home />
+      <Header variant="home" />
 
       <main>
         <section className="hero">
@@ -145,7 +145,7 @@ export default function HomePage() {
         </section>
       </main>
 
-      <Footer home />
+      <Footer variant="home" />
       <ChatPanel />
     </>
   );

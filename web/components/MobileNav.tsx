@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 
-export default function MobileNav({ home = false }: { home?: boolean }) {
+type NavVariant = "home" | "kotly" | "service";
+
+export default function MobileNav({ variant = "service" }: { variant?: NavVariant }) {
   const [isOpen, setIsOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
 
@@ -65,16 +67,25 @@ export default function MobileNav({ home = false }: { home?: boolean }) {
         inert={!isOpen}
         hidden
       >
-        {home ? (
+        {variant === "home" && (
           <>
             <a href="#services" onClick={close}>Послуги</a>
             <a href="#faq" onClick={close}>FAQ</a>
             <a href="#contacts" onClick={close}>Контакти</a>
           </>
-        ) : (
+        )}
+        {variant === "kotly" && (
           <>
             <a href="/" onClick={close}>Головна</a>
             <a href="#directions" onClick={close}>Напрями</a>
+            <a href="/#faq" onClick={close}>FAQ</a>
+            <a href="/#contacts" onClick={close}>Контакти</a>
+          </>
+        )}
+        {variant === "service" && (
+          <>
+            <a href="/" onClick={close}>Головна</a>
+            <a href="/#services" onClick={close}>Послуги</a>
             <a href="/#faq" onClick={close}>FAQ</a>
             <a href="/#contacts" onClick={close}>Контакти</a>
           </>

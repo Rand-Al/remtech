@@ -27,7 +27,7 @@ export const metadata: Metadata = {
 export default function KotlyPage() {
   return (
     <>
-      <Header />
+      <Header variant="kotly" />
 
       <main>
         <section className="hero service-page-hero">
@@ -210,7 +210,7 @@ export default function KotlyPage() {
         </section>
       </main>
 
-      <Footer />
+      <Footer variant="kotly" />
       <ChatPanel defaultService="boiler-repair" />
     </>
   );

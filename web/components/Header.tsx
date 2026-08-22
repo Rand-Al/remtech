@@ -1,6 +1,8 @@
 import MobileNav from "@/components/MobileNav";
 
-export default function Header({ home = false }: { home?: boolean }) {
+type NavVariant = "home" | "kotly" | "service";
+
+export default function Header({ variant = "service" }: { variant?: NavVariant }) {
   return (
     <header className="site-header">
       <a className="brand" href="/" aria-label="RemTech, головна">
@@ -9,16 +11,25 @@ export default function Header({ home = false }: { home?: boolean }) {
       </a>
 
       <nav className="desktop-nav" aria-label="Головна навігація">
-        {home ? (
+        {variant === "home" && (
           <>
             <a href="#services">Послуги</a>
             <a href="#faq">FAQ</a>
             <a href="#contacts">Контакти</a>
           </>
-        ) : (
+        )}
+        {variant === "kotly" && (
           <>
             <a href="/">Головна</a>
             <a href="#directions">Напрями</a>
+            <a href="/#faq">FAQ</a>
+            <a href="/#contacts">Контакти</a>
+          </>
+        )}
+        {variant === "service" && (
+          <>
+            <a href="/">Головна</a>
+            <a href="/#services">Послуги</a>
             <a href="/#faq">FAQ</a>
             <a href="/#contacts">Контакти</a>
           </>
@@ -31,7 +42,7 @@ export default function Header({ home = false }: { home?: boolean }) {
         </div>
         <a className="phone-link" href="tel:+380000000000">+38 000 000 00 00</a>
         <button className="header-chat-button" type="button" data-open-chat>Написати менеджеру</button>
-        <MobileNav home={home} />
+        <MobileNav variant={variant} />
       </div>
     </header>
   );
