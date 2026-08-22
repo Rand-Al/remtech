@@ -32,12 +32,6 @@ function parseOptionalBoolean(value: string | undefined): boolean | undefined {
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 }
 
-function parseOptionalPositiveInteger(value: string | undefined): number | undefined {
-  if (!value?.trim()) return undefined;
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-}
-
 export interface LlmAdapterConfig {
   baseUrl?: string;
   apiKey?: string;
@@ -91,27 +85,56 @@ export function createLlmAdapter(): LlmAdapter {
 }
 
 export function createTelegramAdapter(): TelegramAdapter {
-  const token = process.env.RT_TELEGRAM_BOT_TOKEN?.trim();
-  const chatId = process.env.RT_TELEGRAM_CHAT_ID?.trim();
+  return createTelegramAdapterFromConfig({
+    botToken: process.env.RT_TELEGRAM_BOT_TOKEN,
+    chatId: process.env.RT_TELEGRAM_CHAT_ID,
+    requestsThreadId: process.env.RT_TELEGRAM_REQUESTS_THREAD_ID,
+    technicalThreadId: process.env.RT_TELEGRAM_TECHNICAL_THREAD_ID,
+    perRequestTopics:
+      process.env.RT_TELEGRAM_PER_REQUEST_TOPICS?.trim().toLowerCase() === "true",
+    timeoutMs: Number(process.env.RT_TELEGRAM_TIMEOUT_MS ?? 10_000),
+  });
+}
+
+export interface TelegramAdapterConfig {
+  botToken?: string;
+  chatId?: string;
+  requestsThreadId?: string | number | null;
+  technicalThreadId?: string | number | null;
+  perRequestTopics?: boolean | null;
+  timeoutMs?: number;
+}
+
+function parseOptionalThreadId(
+  value: string | number | null | undefined
+): number | undefined {
+  if (value === null || value === undefined || String(value).trim() === "") {
+    return undefined;
+  }
+  const parsed = Number(String(value).trim());
+  return Number.isInteger(parsed) && parsed !== 0 ? parsed : undefined;
+}
+
+// Единая точка сборки Telegram-адаптера: из env или из базы (админка).
+export function createTelegramAdapterFromConfig(
+  config: TelegramAdapterConfig
+): TelegramAdapter {
+  const token = config.botToken?.trim();
+  const chatId = config.chatId?.trim();
   if (token && chatId) {
     return new TelegramBotAdapter({
       token,
       chatId,
-      requestsThreadId: parseOptionalPositiveInteger(
-        process.env.RT_TELEGRAM_REQUESTS_THREAD_ID
-      ),
-      technicalThreadId: parseOptionalPositiveInteger(
-        process.env.RT_TELEGRAM_TECHNICAL_THREAD_ID
-      ),
-      perRequestTopics:
-        process.env.RT_TELEGRAM_PER_REQUEST_TOPICS?.trim().toLowerCase() === "true",
-      timeoutMs: Number(process.env.RT_TELEGRAM_TIMEOUT_MS ?? 10_000),
+      requestsThreadId: parseOptionalThreadId(config.requestsThreadId),
+      technicalThreadId: parseOptionalThreadId(config.technicalThreadId),
+      perRequestTopics: config.perRequestTopics === true,
+      timeoutMs: config.timeoutMs ?? Number(process.env.RT_TELEGRAM_TIMEOUT_MS ?? 10_000),
     });
   }
 
   if (token || chatId) {
     console.warn(
-      "Адаптер Telegram отключён: нужны RT_TELEGRAM_BOT_TOKEN и RT_TELEGRAM_CHAT_ID"
+      "Адаптер Telegram отключён: нужны токен бота и ID группы одновременно"
     );
   }
   return new StubTelegramAdapter();

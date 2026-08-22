@@ -4,6 +4,7 @@ import Footer from "@/components/Footer";
 import ChatPanel from "@/components/ChatPanel";
 import PricingSection from "@/components/PricingSection";
 import { getContacts } from "@/lib/contacts";
+import { getPricingOverrides } from "@/lib/pricing";
 import { phoneHrefFromPhone } from "@/shared/settings";
 
 export const metadata: Metadata = {
@@ -28,6 +29,7 @@ export const metadata: Metadata = {
 
 export default async function RuKotlyPage() {
   const contacts = await getContacts();
+  const priceOverrides = await getPricingOverrides();
   const phoneHref = phoneHrefFromPhone(contacts.phone);
   return (
     <>
@@ -190,7 +192,7 @@ export default async function RuKotlyPage() {
           </div>
         </section>
 
-        <PricingSection lang="ru" />
+        <PricingSection lang="ru" overrides={priceOverrides} />
 
         <aside className="boiler-safety" id="safety" aria-labelledby="boiler-safety-title">
           <div>

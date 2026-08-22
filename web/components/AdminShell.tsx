@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import AdminContacts from "@/components/AdminContacts";
 import AdminLlm from "@/components/AdminLlm";
+import AdminPrices from "@/components/AdminPrices";
+import AdminTelegram from "@/components/AdminTelegram";
 
 const CHAT_SERVER_URL =
   process.env.NEXT_PUBLIC_CHAT_SERVER_URL ?? "http://localhost:4100";
@@ -32,7 +34,7 @@ function prettyModel(value: string | undefined): string {
   return value;
 }
 
-type Section = "contacts" | "llm";
+type Section = "contacts" | "llm" | "telegram" | "prices";
 
 const SECTION_TITLES: Record<Section, { title: string; lede: string }> = {
   contacts: {
@@ -42,6 +44,14 @@ const SECTION_TITLES: Record<Section, { title: string; lede: string }> = {
   llm: {
     title: "LLM-провайдер",
     lede: "Провайдер применяется к чат-серверу сразу после сохранения - без перезапуска.",
+  },
+  telegram: {
+    title: "Telegram-бот",
+    lede: "Бот подключается сразу после сохранения - без перезапуска сервера.",
+  },
+  prices: {
+    title: "Цены",
+    lede: "Новые значения сразу видны на страницах сайта и в ответах чата - без пересборки.",
   },
 };
 
@@ -195,7 +205,20 @@ export default function AdminShell() {
           >
             LLM
           </button>
-          <button type="button" disabled>Цены <em>скоро</em></button>
+          <button
+            type="button"
+            className={section === "telegram" ? "is-active" : ""}
+            onClick={() => setSection("telegram")}
+          >
+            Telegram
+          </button>
+          <button
+            type="button"
+            className={section === "prices" ? "is-active" : ""}
+            onClick={() => setSection("prices")}
+          >
+            Цены
+          </button>
           <button type="button" disabled>FAQ <em>скоро</em></button>
 
           <div
@@ -228,12 +251,20 @@ export default function AdminShell() {
           <p className="admin-lede">{SECTION_TITLES[section].lede}</p>
           {section === "contacts" ? (
             <AdminContacts password={passwordRef.current} onAuthError={handleAuthError} />
-          ) : (
+          ) : section === "llm" ? (
             <AdminLlm
               password={passwordRef.current}
               onAuthError={handleAuthError}
               onSaved={loadHealth}
             />
+          ) : section === "telegram" ? (
+            <AdminTelegram
+              password={passwordRef.current}
+              onAuthError={handleAuthError}
+              onSaved={loadHealth}
+            />
+          ) : (
+            <AdminPrices password={passwordRef.current} onAuthError={handleAuthError} />
           )}
         </main>
       </div>

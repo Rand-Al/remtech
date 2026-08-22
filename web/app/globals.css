@@ -4598,6 +4598,23 @@ h1 {
   text-transform: uppercase;
 }
 
+.admin-price-row {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-price-title {
+  display: grid;
+  gap: 2px;
+}
+
+.admin-price-title > span {
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
 .admin-field {
   display: grid;
   gap: 4px;

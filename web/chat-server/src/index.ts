@@ -2,13 +2,19 @@ import { createServer } from "node:http";
 import { basename } from "node:path";
 import { loadLocalEnv } from "./env.js";
 import { createRateLimiter, type RateLimiter } from "./rateLimiter.js";
-import { validateContacts, validateLlmSettings } from "./settings.js";
+import {
+  validateContacts,
+  validateLlmSettings,
+  validatePriceOverrides,
+  validateTelegramSettings,
+} from "./settings.js";
 import { contactsWithDefaults, type SiteContacts } from "../../shared/settings.js";
 import { timingSafeEqual } from "node:crypto";
 import {
   createLlmAdapter,
   createLlmAdapterFromConfig,
   createTelegramAdapter,
+  createTelegramAdapterFromConfig,
 } from "./adapters.js";
 import {
   createRequest,
@@ -84,7 +90,8 @@ import { LocalAttachmentStorage } from "./storage/local.js";
 import {
   formatPrice,
   getDiagnosticPrice,
-  getPriceItem,
+  resolvePriceItem,
+  type PriceOverrides,
 } from "../../shared/pricing.js";
 
 loadLocalEnv();
@@ -100,7 +107,53 @@ function applyLlmSettings(value: unknown): void {
     (value ?? {}) as Parameters<typeof createLlmAdapterFromConfig>[0]
   );
 }
-const telegram: TelegramAdapter = createTelegramAdapter();
+
+// Telegram-адаптер тоже пересобирается на лету; поллинг ответов менеджера
+// при смене настроек останавливается и запускается заново.
+let telegram: TelegramAdapter = createTelegramAdapter();
+let stopTelegramPollingFn: (() => void) | null = null;
+
+function applyTelegramSettings(value: unknown, pollingRunning: boolean): void {
+  const previous = telegram;
+  telegram = createTelegramAdapterFromConfig(
+    (value ?? {}) as Parameters<typeof createTelegramAdapterFromConfig>[0]
+  );
+  if (telegram === previous || !pollingRunning) return;
+  stopTelegramPollingFn?.();
+  stopTelegramPollingFn = telegram.startManagerReplyPolling(
+    handleTelegramManagerReply,
+    reportPollingError
+  );
+}
+
+let lastTelegramPollingErrorAt = 0;
+
+async function reportPollingError(error: unknown): Promise<void> {
+  const now = Date.now();
+  if (now - lastTelegramPollingErrorAt < 60_000) return;
+  lastTelegramPollingErrorAt = now;
+  await logTechnicalEvent(
+    "telegram_polling_error",
+    "error",
+    "Ошибка получения ответов менеджера из Telegram",
+    { error: String(error) }
+  );
+}
+
+function startTelegramPolling(): void {
+  stopTelegramPollingFn = telegram.startManagerReplyPolling(
+    handleTelegramManagerReply,
+    reportPollingError
+  );
+}
+
+// Правки цен из админки поверх каталога-дефолта. Обновляются на лету.
+let priceOverrides: PriceOverrides = {};
+
+function visitPriceItem() {
+  return resolvePriceItem("visit-brovary", priceOverrides);
+}
+
 const attachmentStorage = new LocalAttachmentStorage();
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_TYPES = new Set([
@@ -187,9 +240,14 @@ async function handleLogin(
 }
 
 async function handleGetSettings(): Promise<unknown> {
-  const stored = await getSiteSetting("contacts");
+  const [stored, storedPrices] = await Promise.all([
+    getSiteSetting("contacts"),
+    getSiteSetting("prices"),
+  ]);
   const contacts = contactsWithDefaults(stored as Partial<SiteContacts> | null);
-  return { contacts };
+  // Цены не секретны: отдаём переопределения как есть, каталог-дефолт
+  // сайт накладывает у себя.
+  return { contacts, prices: storedPrices ?? {} };
 }
 
 // Чтение настроек LLM для админки. Требует пароль, сам API-ключ
@@ -208,20 +266,39 @@ async function handleAdminReadSettings(
     });
     throw new HttpError(401, "Неверный пароль");
   }
-  const stored = (await getSiteSetting("llm")) as Record<string, unknown> | null;
-  const fallbackModels = Array.isArray(stored?.fallbackModels)
-    ? (stored?.fallbackModels as unknown[]).filter(
+  const [storedLlm, storedTelegram] = await Promise.all([
+    getSiteSetting("llm"),
+    getSiteSetting("telegram"),
+  ]);
+  const llmValue = (storedLlm ?? {}) as Record<string, unknown>;
+  const telegramValue = (storedTelegram ?? {}) as Record<string, unknown>;
+  const fallbackModels = Array.isArray(llmValue.fallbackModels)
+    ? (llmValue.fallbackModels as unknown[]).filter(
         (item): item is string => typeof item === "string"
       )
     : [];
   return {
     llm: {
-      baseUrl: typeof stored?.baseUrl === "string" ? stored.baseUrl : "",
-      model: typeof stored?.model === "string" ? stored.model : "",
+      baseUrl: typeof llmValue.baseUrl === "string" ? llmValue.baseUrl : "",
+      model: typeof llmValue.model === "string" ? llmValue.model : "",
       fallbackModels,
       enableThinking:
-        typeof stored?.enableThinking === "boolean" ? stored.enableThinking : null,
-      hasApiKey: typeof stored?.apiKey === "string" && stored.apiKey.length > 0,
+        typeof llmValue.enableThinking === "boolean" ? llmValue.enableThinking : null,
+      hasApiKey: typeof llmValue.apiKey === "string" && llmValue.apiKey.length > 0,
+    },
+    telegram: {
+      chatId: typeof telegramValue.chatId === "string" ? telegramValue.chatId : "",
+      requestsThreadId:
+        typeof telegramValue.requestsThreadId === "string"
+          ? telegramValue.requestsThreadId
+          : null,
+      technicalThreadId:
+        typeof telegramValue.technicalThreadId === "string"
+          ? telegramValue.technicalThreadId
+          : null,
+      perRequestTopics: telegramValue.perRequestTopics === true,
+      hasBotToken:
+        typeof telegramValue.botToken === "string" && telegramValue.botToken.length > 0,
     },
   };
 }
@@ -240,7 +317,7 @@ async function handleSaveSettings(
     });
     throw new HttpError(401, "Неверный пароль");
   }
-  if (body.key !== "contacts" && body.key !== "llm") {
+  if (body.key !== "contacts" && body.key !== "llm" && body.key !== "prices" && body.key !== "telegram") {
     throw new HttpError(400, "Неизвестный раздел настроек");
   }
 
@@ -269,6 +346,49 @@ async function handleSaveSettings(
       { key: "llm", adapter: llm.name }
     );
     return { ok: true, llm: llm.name };
+  }
+
+  if (body.key === "telegram") {
+    const validation = validateTelegramSettings(body.value);
+    if (!validation.ok) {
+      return { errors: validation.errors };
+    }
+    const value = { ...validation.value };
+    // Пустой токен при заполненной группе означает «оставить прежний»:
+    // сам токен из базы не отдаётся.
+    if (value.chatId && !value.botToken) {
+      const stored = await getSiteSetting("telegram");
+      const storedToken =
+        typeof (stored as Record<string, unknown> | null)?.botToken === "string"
+          ? ((stored as Record<string, unknown>).botToken as string)
+          : "";
+      if (storedToken) value.botToken = storedToken;
+    }
+    await saveSiteSetting("telegram", value);
+    applyTelegramSettings(value, true);
+    await logTechnicalEvent(
+      "settings_updated",
+      "info",
+      `Обновлены настройки Telegram: ${telegram.name}`,
+      { key: "telegram", adapter: telegram.name }
+    );
+    return { ok: true, telegram: telegram.name };
+  }
+
+  if (body.key === "prices") {
+    const validation = validatePriceOverrides(body.value);
+    if (!validation.ok) {
+      return { errors: validation.errors };
+    }
+    priceOverrides = validation.value;
+    await saveSiteSetting("prices", validation.value);
+    await logTechnicalEvent(
+      "settings_updated",
+      "info",
+      "Обновлены цены сайта",
+      { key: "prices" }
+    );
+    return { ok: true, prices: validation.value };
   }
 
   const validation = validateContacts(body.value);
@@ -1242,8 +1362,8 @@ function getDiagnosticPriceReply(
   language: ChatLanguage,
   askForAcceptance: boolean
 ): string {
-  const diagnostics = getDiagnosticPrice(service);
-  const visit = getPriceItem("visit-brovary");
+  const diagnostics = getDiagnosticPrice(service, priceOverrides);
+  const visit = visitPriceItem();
   const acceptance = askForAcceptance
     ? language === "ru" ? " Такой формат вам подходит?" : " Такий формат вам підходить?"
     : "";
@@ -1271,7 +1391,7 @@ function getPriceReply(
   const topic = directTopic ?? getPreviousPriceTopic(history) ?? "general";
   const pricingService = inferPricingService(service, history);
   if (topic === "diagnostics") {
-    if (!directTopic && !getDiagnosticPrice(pricingService)) {
+    if (!directTopic && !getDiagnosticPrice(pricingService, priceOverrides)) {
       const acceptance = askForAcceptance
         ? language === "ru" ? " Такой формат вам подходит?" : " Такий формат вам підходить?"
         : "";
@@ -1282,7 +1402,7 @@ function getPriceReply(
     return getDiagnosticPriceReply(pricingService, language, askForAcceptance);
   }
 
-  const visit = getPriceItem("visit-brovary");
+  const visit = visitPriceItem();
   const acceptance = askForAcceptance
     ? language === "ru" ? " Такой формат вам подходит?" : " Такий формат вам підходить?"
     : "";
@@ -1621,25 +1741,15 @@ await ensureTelegramReplySchema();
 try {
   const storedLlm = await getSiteSetting("llm");
   if (storedLlm !== null) applyLlmSettings(storedLlm);
+  const storedTelegram = await getSiteSetting("telegram");
+  if (storedTelegram !== null) applyTelegramSettings(storedTelegram, false);
+  const storedPrices = await getSiteSetting("prices");
+  if (storedPrices !== null) priceOverrides = storedPrices as PriceOverrides;
 } catch (error) {
-  console.error("Не удалось применить настройки LLM из базы:", error);
+  console.error("Не удалось применить настройки из базы:", error);
 }
 
-let lastTelegramPollingErrorAt = 0;
-const stopTelegramPolling = telegram.startManagerReplyPolling(
-  handleTelegramManagerReply,
-  async (error) => {
-    const now = Date.now();
-    if (now - lastTelegramPollingErrorAt < 60_000) return;
-    lastTelegramPollingErrorAt = now;
-    await logTechnicalEvent(
-      "telegram_polling_error",
-      "error",
-      "Ошибка получения ответов менеджера из Telegram",
-      { error: String(error) }
-    );
-  }
-);
+startTelegramPolling();
 
 server.listen(PORT, () => {
   console.log(`Чат-сервер запущен: http://localhost:${PORT}`);
@@ -1648,7 +1758,7 @@ server.listen(PORT, () => {
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
-    stopTelegramPolling();
+    stopTelegramPollingFn?.();
     server.close(() => process.exit(0));
   });
 }

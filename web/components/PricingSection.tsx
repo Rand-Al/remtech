@@ -2,6 +2,7 @@ import {
   formatPrice,
   getCustomerPrices,
   type PriceId,
+  type PriceOverrides,
   type PricingLocale,
 } from "@/shared/pricing";
 
@@ -33,8 +34,14 @@ const TEXTS = {
   },
 } as const;
 
-export default function PricingSection({ lang = "uk" }: { lang?: "uk" | "ru" }) {
-  const prices = getCustomerPrices(BOILER_PRICE_IDS);
+export default function PricingSection({
+  lang = "uk",
+  overrides,
+}: {
+  lang?: "uk" | "ru";
+  overrides?: PriceOverrides;
+}) {
+  const prices = getCustomerPrices(BOILER_PRICE_IDS, overrides);
   const t = TEXTS[lang];
   const locale: PricingLocale = lang;
 

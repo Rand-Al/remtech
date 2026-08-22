@@ -96,18 +96,35 @@ export const pricingCatalog = {
 
 export type PriceId = keyof typeof pricingCatalog.items;
 
+// Переопределения из админки: только значения, подписи остаются из каталога.
+export type PriceOverrides = Partial<Record<PriceId, PriceValue>>;
+
 export function getPriceItem(id: PriceId): PriceItem {
   return pricingCatalog.items[id];
 }
 
-export function getCustomerPrices(ids: readonly PriceId[]): PriceItem[] {
+// Единая точка чтения цены: каталог как дефолт плюс сохранённые в базе правки.
+export function resolvePriceItem(id: PriceId, overrides?: PriceOverrides): PriceItem {
+  const item = pricingCatalog.items[id];
+  const override = overrides?.[id];
+  if (!override) return item;
+  return { ...item, value: override };
+}
+
+export function getCustomerPrices(
+  ids: readonly PriceId[],
+  overrides?: PriceOverrides
+): PriceItem[] {
   return ids
-    .map((id) => getPriceItem(id))
+    .map((id) => resolvePriceItem(id, overrides))
     .filter((item) => item.customerVisible);
 }
 
-export function getDiagnosticPrice(service: string): PriceItem | null {
-  const item = getPriceItem("boiler-diagnostics");
+export function getDiagnosticPrice(
+  service: string,
+  overrides?: PriceOverrides
+): PriceItem | null {
+  const item = resolvePriceItem("boiler-diagnostics", overrides);
   return item.services.includes(service as PricingService) ? item : null;
 }
 

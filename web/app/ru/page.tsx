@@ -4,6 +4,7 @@ import Footer from "@/components/Footer";
 import ChatPanel from "@/components/ChatPanel";
 import Faq from "@/components/Faq";
 import { getContacts } from "@/lib/contacts";
+import { getPricingOverrides } from "@/lib/pricing";
 import { phoneHrefFromPhone } from "@/shared/settings";
 
 export const metadata: Metadata = {
@@ -28,6 +29,7 @@ export const metadata: Metadata = {
 
 export default async function RuHomePage() {
   const contacts = await getContacts();
+  const priceOverrides = await getPricingOverrides();
   const phoneHref = phoneHrefFromPhone(contacts.phone);
   return (
     <>
@@ -115,7 +117,7 @@ export default async function RuHomePage() {
           </div>
         </section>
 
-        <Faq lang="ru" />
+        <Faq lang="ru" overrides={priceOverrides} />
 
         <section className="contacts" id="contacts">
           <div className="contacts-intro">

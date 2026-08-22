@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateContacts, validateLlmSettings } from "./settings.js";
+import {
+  validateContacts,
+  validateLlmSettings,
+  validatePriceOverrides,
+  validateTelegramSettings,
+} from "./settings.js";
 
 const VALID = {
   phone: "+38 050 123 45 67",
@@ -107,4 +112,87 @@ test("unknown enableThinking values fall back to default", () => {
   if (result.ok) {
     assert.equal(result.value.enableThinking, null);
   }
+});
+
+test("accepts valid price overrides", () => {
+  const result = validatePriceOverrides({
+    "visit-brovary": { kind: "fixed", amount: 450 },
+    "boiler-diagnostics": { kind: "range", min: 500, max: 900 },
+  });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.deepEqual(result.value["visit-brovary"], { kind: "fixed", amount: 450 });
+    assert.equal(result.value["boiler-maintenance"], undefined);
+  }
+});
+
+test("rejects unknown price ids and bad amounts", () => {
+  const unknown = validatePriceOverrides({
+    "unknown-item": { kind: "fixed", amount: 100 },
+  });
+  assert.equal(unknown.ok, false);
+
+  const negative = validatePriceOverrides({
+    "visit-brovary": { kind: "fixed", amount: -5 },
+  });
+  assert.equal(negative.ok, false);
+
+  const inverted = validatePriceOverrides({
+    "boiler-diagnostics": { kind: "range", min: 900, max: 500 },
+  });
+  assert.equal(inverted.ok, false);
+});
+
+test("accepts non-numeric price kinds without fields", () => {
+  const result = validatePriceOverrides({
+    "boiler-repair": { kind: "after-inspection" },
+  });
+  assert.equal(result.ok, true);
+});
+
+const VALID_TG = {
+  botToken: "123456789:AAEabcDEFghiJKLmnoPQRstuVWXyz",
+  chatId: "-1001234567890",
+  requestsThreadId: "2",
+  technicalThreadId: null,
+  perRequestTopics: true,
+};
+
+test("accepts a complete Telegram config", () => {
+  const result = validateTelegramSettings(VALID_TG);
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.value.chatId, "-1001234567890");
+    assert.equal(result.value.requestsThreadId, "2");
+    assert.equal(result.value.perRequestTopics, true);
+  }
+});
+
+test("empty chat id clears the whole telegram config", () => {
+  const result = validateTelegramSettings({ ...VALID_TG, chatId: " " });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.value.botToken, "");
+    assert.equal(result.value.chatId, "");
+    assert.equal(result.value.perRequestTopics, false);
+  }
+});
+
+test("rejects broken token and chat id", () => {
+  const badToken = validateTelegramSettings({
+    ...VALID_TG,
+    botToken: "just-a-word",
+  });
+  assert.equal(badToken.ok, false);
+
+  const badChat = validateTelegramSettings({ ...VALID_TG, chatId: "hello" });
+  assert.equal(badChat.ok, false);
+});
+
+test("thread ids must be integers when present", () => {
+  const result = validateTelegramSettings({
+    ...VALID_TG,
+    technicalThreadId: "abc",
+  });
+  assert.equal(result.ok, false);
 });

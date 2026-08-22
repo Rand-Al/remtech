@@ -1,14 +1,22 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { formatPrice, getPriceItem, type PricingLocale } from "@/shared/pricing";
+import {
+  formatPrice,
+  resolvePriceItem,
+  type PriceOverrides,
+  type PricingLocale,
+} from "@/shared/pricing";
 
 type FaqLang = "uk" | "ru";
 
-function buildFaqItems(locale: PricingLocale) {
-  const brovaryVisitPrice = formatPrice(getPriceItem("visit-brovary").value, locale);
+function buildFaqItems(locale: PricingLocale, overrides?: PriceOverrides) {
+  const brovaryVisitPrice = formatPrice(
+    resolvePriceItem("visit-brovary", overrides).value,
+    locale
+  );
   const boilerDiagnosticPrice = formatPrice(
-    getPriceItem("boiler-diagnostics").value,
+    resolvePriceItem("boiler-diagnostics", overrides).value,
     locale
   );
 
@@ -112,9 +120,15 @@ const HEADING = {
   },
 } as const;
 
-export default function Faq({ lang = "uk" }: { lang?: FaqLang }) {
+export default function Faq({
+  lang = "uk",
+  overrides,
+}: {
+  lang?: FaqLang;
+  overrides?: PriceOverrides;
+}) {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
-  const items = buildFaqItems(lang);
+  const items = buildFaqItems(lang, overrides);
   const heading = HEADING[lang];
 
   const toggle = useCallback((index: number) => {

@@ -2,6 +2,12 @@ import {
   contactsWithDefaults,
   type SiteContacts,
 } from "../../shared/settings.js";
+import {
+  pricingCatalog,
+  type PriceId,
+  type PriceOverrides,
+  type PriceValue,
+} from "../../shared/pricing.js";
 
 export type ContactsValidation =
   | { ok: true; value: SiteContacts }
@@ -115,8 +121,7 @@ export function validateLlmSettings(input: unknown): LlmValidation {
   };
 }
 
-export function validateContacts(input: unknown): ContactsValidation {
-  const errors: string[] = [];
+export function validateContacts(input: unknown): ContactsValidation {  const errors: string[] = [];
   if (typeof input !== "object" || input === null) {
     return { ok: false, errors: ["Контакты переданы неверно"] };
   }
@@ -153,5 +158,173 @@ export function validateContacts(input: unknown): ContactsValidation {
       schedule: raw.schedule as SiteContacts["schedule"],
       area: raw.area as SiteContacts["area"],
     }),
+  };
+}
+
+// Настройки цен: карта «id позиции -> значение» поверх каталога-дефолта.
+// Подписи и набор позиций из админки не меняются — только стоимость.
+export type PricesValidation =
+  | { ok: true; value: PriceOverrides }
+  | { ok: false; errors: string[] };
+
+const MAX_PRICE_AMOUNT = 10_000_000;
+
+function parsePriceAmount(value: unknown, field: string, errors: string[]): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    errors.push(`${field}: укажите число`);
+    return null;
+  }
+  const rounded = Math.round(value);
+  if (rounded < 0 || rounded > MAX_PRICE_AMOUNT) {
+    errors.push(`${field}: число от 0 до ${MAX_PRICE_AMOUNT.toLocaleString("ru-RU")}`);
+    return null;
+  }
+  return rounded;
+}
+
+function parsePriceValue(input: unknown, errors: string[]): PriceValue | null {
+  if (typeof input !== "object" || input === null) {
+    errors.push("Значение цены передано неверно");
+    return null;
+  }
+  const raw = input as Record<string, unknown>;
+  switch (raw.kind) {
+    case "fixed": {
+      const amount = parsePriceAmount(raw.amount, "Сумма", errors);
+      return amount === null ? null : { kind: "fixed", amount };
+    }
+    case "from": {
+      const amount = parsePriceAmount(raw.amount, "Сумма", errors);
+      return amount === null ? null : { kind: "from", amount };
+    }
+    case "range": {
+      const min = parsePriceAmount(raw.min, "Минимум", errors);
+      const max = parsePriceAmount(raw.max, "Максимум", errors);
+      if (min === null || max === null) return null;
+      if (min > max) {
+        errors.push("Диапазон: минимум не больше максимума");
+        return null;
+      }
+      return { kind: "range", min, max };
+    }
+    case "after-inspection":
+      return { kind: "after-inspection" };
+    case "individual":
+      return { kind: "individual" };
+    default:
+      errors.push("Неизвестный тип цены");
+      return null;
+  }
+}
+
+export function validatePriceOverrides(input: unknown): PricesValidation {
+  const errors: string[] = [];
+  if (typeof input !== "object" || input === null) {
+    return { ok: false, errors: ["Цены переданы неверно"] };
+  }
+  const raw = input as Record<string, unknown>;
+  const knownIds = Object.keys(pricingCatalog.items) as PriceId[];
+  const unknownIds = Object.keys(raw).filter((key) => !knownIds.includes(key as PriceId));
+  if (unknownIds.length > 0) {
+    return { ok: false, errors: ["Неизвестная позиция цены"] };
+  }
+
+  const value: PriceOverrides = {};
+  for (const id of knownIds) {
+    // Отсутствующий ключ означает «оставить значение каталога».
+    if (raw[id] === undefined) continue;
+    const parsed = parsePriceValue(raw[id], errors);
+    if (parsed) value[id] = parsed;
+  }
+
+  if (errors.length > 0) return { ok: false, errors };
+  return { ok: true, value };
+}
+
+// Настройки Telegram-бота из админки. Пустой ID группы означает возврат
+// к заглушке; пустой токен при сохранении означает «оставить прежний».
+export interface TelegramSettings {
+  botToken: string;
+  chatId: string;
+  requestsThreadId: string | null;
+  technicalThreadId: string | null;
+  perRequestTopics: boolean;
+}
+
+export type TelegramValidation =
+  | { ok: true; value: TelegramSettings }
+  | { ok: false; errors: string[] };
+
+export const EMPTY_TELEGRAM_SETTINGS: TelegramSettings = {
+  botToken: "",
+  chatId: "",
+  requestsThreadId: null,
+  technicalThreadId: null,
+  perRequestTopics: false,
+};
+
+const TELEGRAM_TOKEN_PATTERN = /^[^:\s]+:[^:\s]+$/;
+const TELEGRAM_CHAT_ID_PATTERN = /^(-?\d{5,25}|@[A-Za-z0-9_]{4,64})$/;
+const THREAD_ID_PATTERN = /^-?\d{1,20}$/;
+
+function parseThreadIdInput(
+  value: unknown,
+  field: string,
+  errors: string[]
+): string | null {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  if (!THREAD_ID_PATTERN.test(text)) {
+    errors.push(`${field}: целое число или пусто`);
+    return null;
+  }
+  return text;
+}
+
+export function validateTelegramSettings(input: unknown): TelegramValidation {
+  const errors: string[] = [];
+  if (typeof input !== "object" || input === null) {
+    return { ok: false, errors: ["Настройки Telegram переданы неверно"] };
+  }
+  const raw = input as Record<string, unknown>;
+
+  const chatId = typeof raw.chatId === "string" ? raw.chatId.trim() : "";
+  if (!chatId) {
+    // Осознанная очистка конфигурации — работа на заглушке.
+    if (errors.length > 0) return { ok: false, errors };
+    return { ok: true, value: { ...EMPTY_TELEGRAM_SETTINGS } };
+  }
+  if (!TELEGRAM_CHAT_ID_PATTERN.test(chatId)) {
+    errors.push("ID группы: число вроде -1001234567890 или @имя_канала");
+  }
+
+  const botToken = typeof raw.botToken === "string" ? raw.botToken.trim() : "";
+  if (botToken && !TELEGRAM_TOKEN_PATTERN.test(botToken)) {
+    errors.push("Токен бота: строка вида 123456789:AAE...");
+  }
+
+  const requestsThreadId = parseThreadIdInput(
+    raw.requestsThreadId,
+    "Тема заявок",
+    errors
+  );
+  const technicalThreadId = parseThreadIdInput(
+    raw.technicalThreadId,
+    "Техническая тема",
+    errors
+  );
+
+  if (errors.length > 0) return { ok: false, errors };
+
+  return {
+    ok: true,
+    value: {
+      botToken,
+      chatId,
+      requestsThreadId,
+      technicalThreadId,
+      perRequestTopics: raw.perRequestTopics === true,
+    },
   };
 }
