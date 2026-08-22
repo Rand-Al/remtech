@@ -56,6 +56,88 @@ const SERVICE_QUESTIONS: Record<string, string> = {
 const INITIAL_ASK_SERVICE =
   "Вітаю! Підкажіть, будь ласка, яка техніка потребує ремонту?";
 
+const RU_SERVICE_QUESTIONS: Record<string, string> = {
+  "boiler-repair": "Здравствуйте! Расскажите, пожалуйста, что случилось с котлом?",
+  "boiler-cleaning":
+    "Здравствуйте! Подскажите, пожалуйста, когда в последний раз проводили обслуживание котла?",
+  "boiler-installation":
+    "Здравствуйте! Котел нужно установить впервые или заменить имеющийся?",
+  washer: "Здравствуйте! Подскажите, пожалуйста, что случилось со стиральной машиной?",
+  dishwasher:
+    "Здравствуйте! Подскажите, пожалуйста, что случилось с посудомоечной машиной?",
+  other: "Здравствуйте! Подскажите, пожалуйста, какая техника нуждается в ремонте и что с ней случилось?",
+};
+
+const RU_INITIAL_ASK_SERVICE =
+  "Здравствуйте! Подскажите, пожалуйста, какая техника нуждается в ремонте?";
+
+type ChatLang = "uk" | "ru";
+
+const CHAT_TEXTS = {
+  uk: {
+    openChatAria: "Відкрити чат з менеджером",
+    title: "Менеджер RemTech",
+    connecting: "підключення...",
+    online: "онлайн",
+    connectionMessage: "З’єднуємо з менеджером RemTech...",
+    typingAria: "Менеджер друкує",
+    placeholder: "Напишіть повідомлення...",
+    messageLabel: "Повідомлення",
+    sendAria: "Надіслати",
+    sendTitle: "Надіслати",
+    closeAria: "Згорнути чат",
+    closeTitle: "Згорнути",
+    addPhotoAria: "Додати фото",
+    addPhotoTitle: "Додати фото",
+    removePhotoAria: "Видалити фотографію",
+    removePhotoTitle: "Видалити",
+    selectedPhotosAria: "Вибрані фотографії",
+    selectedPhotoAlt: "Вибране фото",
+    clientPhotoAlt: "Фото від клієнта",
+    openPhotoAria: "Відкрити фотографію",
+    typeError: "Підтримуються фото JPEG, PNG, WebP, HEIC та HEIF.",
+    sizeError: "Розмір одного фото не повинен перевищувати 10 МБ.",
+    countError: "До одного повідомлення можна додати не більше трьох фото.",
+    uploadError: "Не всі фотографії вдалося завантажити. Спробуйте ще раз.",
+    fallback: "Дякуємо, повідомлення отримано. Менеджер відповість трохи пізніше.",
+    photoSingle: "Клієнт додав фотографію.",
+    photoPlural: "Клієнт додав фотографії.",
+    serviceQuestions: SERVICE_QUESTIONS,
+    initialAskService: INITIAL_ASK_SERVICE,
+  },
+  ru: {
+    openChatAria: "Открыть чат с менеджером",
+    title: "Менеджер RemTech",
+    connecting: "подключение...",
+    online: "онлайн",
+    connectionMessage: "Соединяемся с менеджером RemTech...",
+    typingAria: "Менеджер печатает",
+    placeholder: "Напишите сообщение...",
+    messageLabel: "Сообщение",
+    sendAria: "Отправить",
+    sendTitle: "Отправить",
+    closeAria: "Свернуть чат",
+    closeTitle: "Свернуть",
+    addPhotoAria: "Добавить фото",
+    addPhotoTitle: "Добавить фото",
+    removePhotoAria: "Удалить фотографию",
+    removePhotoTitle: "Удалить",
+    selectedPhotosAria: "Выбранные фотографии",
+    selectedPhotoAlt: "Выбранное фото",
+    clientPhotoAlt: "Фото от клиента",
+    openPhotoAria: "Открыть фотографию",
+    typeError: "Поддерживаются фото JPEG, PNG, WebP, HEIC и HEIF.",
+    sizeError: "Размер одного фото не должен превышать 10 МБ.",
+    countError: "К одному сообщению можно добавить не более трех фото.",
+    uploadError: "Не все фотографии удалось загрузить. Попробуйте еще раз.",
+    fallback: "Спасибо, сообщение получили. Менеджер ответит немного позже.",
+    photoSingle: "Клиент добавил фотографию.",
+    photoPlural: "Клиент добавил фотографии.",
+    serviceQuestions: RU_SERVICE_QUESTIONS,
+    initialAskService: RU_INITIAL_ASK_SERVICE,
+  },
+} as const;
+
 function getTypingDelay(text: string): number {
   const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
   const calculated = BASE_TYPING_DELAY_MS + wordCount * PER_WORD_DELAY_MS;
@@ -75,9 +157,12 @@ function wait(delay: number): Promise<void> {
 
 export default function ChatPanel({
   defaultService = null,
+  lang = "uk",
 }: {
   defaultService?: string | null;
+  lang?: ChatLang;
 }) {
+  const t = CHAT_TEXTS[lang];
   const [isOpen, setIsOpen] = useState(false);
   const [isMobileModal, setIsMobileModal] = useState(false);
   const [state, setState] = useState<ChatState>("idle");
@@ -285,7 +370,7 @@ export default function ChatPanel({
       ]);
     } catch {
       const fallback =
-        "Дякуємо, повідомлення отримано. Менеджер відповість трохи пізніше.";
+        t.fallback;
       await wait(getTypingDelay(fallback));
       setMessages((prev) => [
         ...prev,
@@ -312,11 +397,11 @@ export default function ChatPanel({
 
       for (const file of selected) {
         if (!ACCEPTED_PHOTO_TYPES.has(file.type)) {
-          setUploadError("Підтримуються фото JPEG, PNG, WebP, HEIC та HEIF.");
+          setUploadError(t.typeError);
           continue;
         }
         if (file.size > MAX_PHOTO_SIZE) {
-          setUploadError("Розмір одного фото не повинен перевищувати 10 МБ.");
+          setUploadError(t.sizeError);
           continue;
         }
         valid.push({
@@ -328,7 +413,7 @@ export default function ChatPanel({
       }
 
       if (selectedFiles.length > available) {
-        setUploadError("До одного повідомлення можна додати не більше трьох фото.");
+        setUploadError(t.countError);
       }
       return [...current, ...valid];
     });
@@ -354,9 +439,7 @@ export default function ChatPanel({
 
       const serverText =
         text ||
-        (photos.length === 1
-          ? "Клієнт додав фотографію."
-          : "Клієнт додав фотографії.");
+        (photos.length === 1 ? t.photoSingle : t.photoPlural);
       const localMessageId = crypto.randomUUID();
 
       setMessages((prev) => [
@@ -389,7 +472,7 @@ export default function ChatPanel({
             token: tokenRef.current,
             service: selectedService ?? undefined,
             text: serverText,
-            lang: "uk",
+            lang,
             greeting: tokenRef.current ? undefined : initialGreetingRef.current ?? undefined,
           }),
         });
@@ -449,7 +532,7 @@ export default function ChatPanel({
           )
         );
         if (uploaded.length < photos.length) {
-          setUploadError("Не всі фотографії вдалося завантажити. Спробуйте ще раз.");
+          setUploadError(t.uploadError);
         }
 
         await getManagerReply(
@@ -470,7 +553,7 @@ export default function ChatPanel({
           );
         });
         const fallback =
-          "Дякуємо, повідомлення отримано. Менеджер відповість трохи пізніше.";
+          t.fallback;
         await wait(getThinkingDelay());
         typingCountRef.current += 1;
         setIsTyping(true);
@@ -508,8 +591,8 @@ export default function ChatPanel({
       if (greetingShownRef.current) return;
 
       const fallback =
-        (selectedService ? SERVICE_QUESTIONS[selectedService] : null) ??
-        INITIAL_ASK_SERVICE;
+        (selectedService ? t.serviceQuestions[selectedService] : null) ??
+        t.initialAskService;
 
       if (cancelled || greetingShownRef.current) return;
 
@@ -577,7 +660,7 @@ export default function ChatPanel({
         className={`floating-chat${isOpen ? " is-hidden" : ""}`}
         type="button"
         onClick={() => open()}
-        aria-label="Відкрити чат з менеджером"
+        aria-label={t.openChatAria}
       >
         <span className="chat-dot" aria-hidden="true"></span>
         <span>Чат</span>
@@ -595,19 +678,19 @@ export default function ChatPanel({
         <header className="chat-header">
           <div className="manager-avatar" aria-hidden="true">R</div>
           <div className="manager-details">
-            <strong id="chat-title">Менеджер RemTech</strong>
+            <strong id="chat-title">{t.title}</strong>
             <span className={`manager-status${state === "online" ? " is-online" : ""}`}>
               <i></i>
               <span aria-live="polite">
-                {state === "online" ? "онлайн" : "підключення..."}
+                {state === "online" ? t.online : t.connecting}
               </span>
             </span>
           </div>
           <button
             className="chat-close"
             type="button"
-            aria-label="Згорнути чат"
-            title="Згорнути"
+            aria-label={t.closeAria}
+            title={t.closeTitle}
             onClick={close}
           >
             &#8722;
@@ -616,7 +699,7 @@ export default function ChatPanel({
 
         <div className="chat-body" ref={bodyRef} role="log" aria-live="polite">
           {state === "idle" && (
-            <p className="connection-message">З’єднуємо з менеджером RemTech...</p>
+            <p className="connection-message">{t.connectionMessage}</p>
           )}
           {messages.map((message) => (
             <div
@@ -633,9 +716,9 @@ export default function ChatPanel({
                       href={attachment.url}
                       target="_blank"
                       rel="noreferrer"
-                      aria-label="Відкрити фотографію"
+                      aria-label={t.openPhotoAria}
                     >
-                      <img src={attachment.url} alt="Фото від клієнта" />
+                      <img src={attachment.url} alt={t.clientPhotoAlt} />
                     </a>
                   ))}
                 </div>
@@ -644,7 +727,7 @@ export default function ChatPanel({
             </div>
           ))}
           {isTyping && (
-            <p className="message manager typing" aria-label="Менеджер друкує">
+            <p className="message manager typing" aria-label={t.typingAria}>
               <span></span><span></span><span></span>
             </p>
           )}
@@ -652,10 +735,10 @@ export default function ChatPanel({
 
         <form className="chat-compose" onSubmit={send}>
           {pendingPhotos.length > 0 && (
-            <div className="photo-preview-list" aria-label="Вибрані фотографії">
+            <div className="photo-preview-list" aria-label={t.selectedPhotosAria}>
               {pendingPhotos.map((photo) => (
                 <div className="photo-preview" key={photo.id}>
-                  <img src={photo.url} alt="Вибране фото" />
+                  <img src={photo.url} alt={t.selectedPhotoAlt} />
                   <button
                     type="button"
                     onClick={() => removePendingPhoto(photo.id)}
@@ -677,10 +760,10 @@ export default function ChatPanel({
                 ? " is-disabled"
                 : ""
             }`}
-            title="Додати фото"
+            title={t.addPhotoTitle}
           >
             <span aria-hidden="true">&#43;</span>
-            <span className="sr-only">Додати фото</span>
+            <span className="sr-only">{t.addPhotoAria}</span>
             <input
               id="chat-photo-input"
               ref={photoInputRef}
@@ -695,12 +778,12 @@ export default function ChatPanel({
               onChange={(event) => selectPhotos(event.currentTarget.files)}
             />
           </label>
-          <label className="sr-only" htmlFor="chat-message">Повідомлення</label>
+          <label className="sr-only" htmlFor="chat-message">{t.messageLabel}</label>
           <textarea
             id="chat-message"
             ref={messageInputRef}
             rows={1}
-            placeholder="Напишіть повідомлення..."
+            placeholder={t.placeholder}
             value={draft}
             onChange={(event) => {
               const el = event.currentTarget;
@@ -719,8 +802,8 @@ export default function ChatPanel({
             className="send-button"
             type="submit"
             disabled={isSending || (!draft.trim() && pendingPhotos.length === 0)}
-            aria-label="Надіслати"
-            title="Надіслати"
+            aria-label={t.sendAria}
+            title={t.sendTitle}
           >
             &#8593;
           </button>

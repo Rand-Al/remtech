@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 export default function PrivacyPage() {
   return (
     <>
-      <Header />
+      <Header altLangHref="/ru/privacy/" />
 
       <main>
         <section className="policy-page">
@@ -88,7 +88,7 @@ export default function PrivacyPage() {
         </section>
       </main>
 
-      <Footer />
+      <Footer altLangHref="/ru/privacy/" />
       <ChatPanel />
     </>
   );

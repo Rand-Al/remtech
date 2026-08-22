@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 export default function PosudomyiniMashynyPage() {
   return (
     <>
-      <Header />
+      <Header altLangHref="/ru/posudomyini-mashyny/" />
 
       <main>
         <section className="hero service-page-hero dishwasher-page-hero">
@@ -119,7 +119,7 @@ export default function PosudomyiniMashynyPage() {
         </section>
       </main>
 
-      <Footer />
+      <Footer altLangHref="/ru/posudomyini-mashyny/" />
       <ChatPanel defaultService="dishwasher" />
     </>
   );

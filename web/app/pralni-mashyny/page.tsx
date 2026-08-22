@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 export default function PralniMashynyPage() {
   return (
     <>
-      <Header />
+      <Header altLangHref="/ru/pralni-mashyny/" />
 
       <main>
         <section className="hero service-page-hero washer-page-hero">
@@ -119,7 +119,7 @@ export default function PralniMashynyPage() {
         </section>
       </main>
 
-      <Footer />
+      <Footer altLangHref="/ru/pralni-mashyny/" />
       <ChatPanel defaultService="washer" />
     </>
   );
