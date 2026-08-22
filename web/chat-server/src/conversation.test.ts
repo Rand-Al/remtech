@@ -129,6 +129,14 @@ test("extracts a brand and model code from the first message", () => {
   assert.equal(extractBrandFromText("стиралка сломалась"), null);
 });
 
+test("recognizes human-manager requests in Ukrainian and Russian", () => {
+  assert.equal(requestsHumanManager("Позовіть менеджера, будь ласка"), true);
+  assert.equal(requestsHumanManager("позовите менеджера"), true);
+  assert.equal(requestsHumanManager("покличте когось"), true);
+  assert.equal(requestsHumanManager("треба менеджер"), true);
+  assert.equal(requestsHumanManager("хочу замовити ремонт"), false);
+});
+
 test("does not treat a refusal as voluntary acceptance of payment terms", () => {
   assert.equal(
     explicitlyAcceptsTerms("С платным выездом и диагностикой не согласен"),

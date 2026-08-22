@@ -1241,6 +1241,21 @@ async function handleAttachmentUpload(
     throw error;
   }
 
+  // В ручном режиме фото приходят после пересылки текста сообщения,
+  // поэтому каждое загруженное фото уходит в тему сразу само
+  const details = await getRequestDetails(token);
+  if (details?.status === "waiting_for_manager") {
+    const anchor = await getLatestTelegramMessageLink(details.id);
+    if (anchor) {
+      await sendUnsentAttachmentsToTelegram(
+        details.id,
+        details.number,
+        anchor,
+        messageId
+      );
+    }
+  }
+
   return {
     attachment: {
       id: attachment.id,

@@ -9,6 +9,7 @@ export interface OpenAiCompatibleOptions {
   enableThinking?: boolean;
   timeoutMs?: number;
   attemptTimeoutMs?: number;
+  fetchImpl?: (input: string, init?: RequestInit) => Promise<Response>;
 }
 
 export class OpenAiCompatibleLlmAdapter implements LlmAdapter {
@@ -22,6 +23,7 @@ export class OpenAiCompatibleLlmAdapter implements LlmAdapter {
   private readonly enableThinking?: boolean;
   private readonly timeoutMs: number;
   private readonly attemptTimeoutMs: number;
+  private readonly fetchImpl: (input: string, init?: RequestInit) => Promise<Response>;
   private readonly unavailableUntil = new Map<string, number>();
 
   constructor(options: OpenAiCompatibleOptions) {
@@ -35,6 +37,7 @@ export class OpenAiCompatibleLlmAdapter implements LlmAdapter {
     this.enableThinking = options.enableThinking;
     this.timeoutMs = options.timeoutMs ?? 120_000;
     this.attemptTimeoutMs = options.attemptTimeoutMs ?? 20_000;
+    this.fetchImpl = options.fetchImpl ?? fetch;
     const fallbackLabel = this.fallbackModels.length
       ? ` (+${this.fallbackModels.length} fallback)`
       : "";
@@ -129,7 +132,7 @@ export class OpenAiCompatibleLlmAdapter implements LlmAdapter {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
