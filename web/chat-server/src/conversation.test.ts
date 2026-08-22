@@ -12,6 +12,7 @@ import {
   extractContactAnswer,
   extractDeviceDetailsAnswer,
   extractExplicitLocation,
+  extractPackedLocation,
   extractInitialSymptom,
   extractBrandFromText,
   getLocationAnswer,
@@ -382,4 +383,50 @@ test("does not infer consent before the terms question", () => {
     getTermsDecision([{ sender: "client", text: "хорошо" }]),
     "not-asked"
   );
+});
+
+test("accepts consent phrased around paid diagnostics only", () => {
+  // Реальный сбой: «с платной диагностикой согласен» без слова «выезд».
+  assert.equal(
+    explicitlyAcceptsTerms("понял, с платной диагностикой согласен"),
+    true
+  );
+  assert.equal(explicitlyAcceptsTerms("сколько стоит выезд и диагностика?"), false);
+  assert.equal(
+    explicitlyAcceptsTerms("не согласен с платной диагностикой"),
+    false
+  );
+});
+
+test("extracts the name from an all-in-one packed message", () => {
+  // Реальный сбой: «виталий, 0999999999, бровары, героев украины 1».
+  assert.deepEqual(
+    extractContactAnswer(
+      "понял, виталий, 0999999999, бровары, героев украины 1",
+      "К сожалению, мы не ремонтируем холодильники."
+    ),
+    { name: "виталий", phone: "0999999999" }
+  );
+  assert.deepEqual(
+    extractContactAnswer("здравствуйте, анна 0671112233", ""),
+    { name: "анна", phone: "0671112233" }
+  );
+  assert.deepEqual(
+    extractContactAnswer("понял, 0999999999", ""),
+    { phone: "0999999999" }
+  );
+});
+
+test("builds a location from a packed message without street markers", () => {
+  assert.equal(
+    extractPackedLocation(
+      "понял, виталий, 0999999999, бровары, героев украины 1"
+    ),
+    "Бровари, героев украины 1"
+  );
+  assert.equal(
+    extractPackedLocation("бровары грушевського 13"),
+    "Бровари, грушевського 13"
+  );
+  assert.equal(extractPackedLocation("привет, котел не греет"), null);
 });

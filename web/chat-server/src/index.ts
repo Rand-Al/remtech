@@ -70,6 +70,7 @@ import {
   extractContactAnswer,
   extractDeviceDetailsAnswer,
   extractExplicitLocation,
+  extractPackedLocation,
   extractInitialSymptom,
   extractBrandFromText,
   getLocationAnswer,
@@ -670,7 +671,7 @@ async function handleSendMessage(
     const detectedService = detectServiceFromText(text);
     const service = detectedService ?? normalizeService(body.service);
     const contact = extractContactAnswer(text, "");
-    const location = extractExplicitLocation(text);
+    const location = extractExplicitLocation(text) ?? extractPackedLocation(text);
     const fields: RequestFields = {
       service,
       symptom: extractInitialSymptom(text),

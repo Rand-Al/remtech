@@ -24,6 +24,18 @@ const TERMS_POSITIVE =
 const NAME_QUESTION = /(?:як\s+до\s+вас\s+звертатися|как\s+к\s+вам\s+обращаться|(?:ім['’]?я|имя))/iu;
 const NAME_INTRODUCTION =
   /(?:меня\s+зовут|мо[её]\s+имя|мене\s+звати|моє\s+ім['’]?я)\s+([\p{L}'’-]{2,50})/iu;
+
+// Имя «в один пакет»: «понял, виталий, 0999999999, бровары…».
+// Сканируем первые слова сообщения и берём первое чисто буквенное слово,
+// не являющееся приветствием или служебным словом. Применяем только когда
+// в сообщении есть валидный телефон — иначе это обычная фраза.
+const NAME_TOKEN_STOP = new Set([
+  "понял", "поняла", "принял", "приняла", "ок", "окей", "хорошо", "добре",
+  "зрозумів", "зрозуміла", "да", "так", "ні", "нет", "спасибо", "дякую",
+  "город", "місто", "улица", "вулиця", "бровары", "бровари", "киев", "київ",
+]);
+const GREETING_TOKEN =
+  /^(?:добрий|доброго|добрый|доброе|здрастуйте|здравствуйте|вітаю|привіт|привет|хай|hello)(?![\p{L}])/iu;
 const IMMEDIATE_ELECTRICAL_HAZARD =
   /(?:\b(?:дым|дим)\b|дым(?:ит|ится|ок)|дим(?:ить|иться)|задим|задым|іскр|искр|запах\s+(?:гарі|гари)|пахне\s+горіл|пахнет\s+горел)/iu;
 const PRICE_QUESTION =
@@ -42,8 +54,10 @@ const HUMAN_IDENTITY_QUESTION =
   /(?:(?:ты|вы|ти|ви)\s+(?:(?:разве|точно|вообще|дійсно|справді|не)\s+)*(?:живой\s+|жива\s+|справжн(?:ій|я)\s+)?(?:человек|людина|бот|робот)|(?:это|це)\s+(?:бот|робот|человек|людина)|(?:я\s+)?(?:говорю|розмовляю)\s+(?:с\s+человеком|з\s+людиною))/iu;
 const NON_LOCATION_ANSWER =
   /(?:выключ|вимк|отключ|відключ|включ|увімк|дым|дим|іскр|искр|работ|прац|кот[её]л|котел|стирал|прал|посудом|машин|техник|сроч|термінов|не\s+знаю|не\s+знаем|не\s+знаємо|^(?:да|нет|так|ні|ок|окей|хорошо|добре)$)/iu;
+// Достаточно согласия с любым из платных пунктов (выезд ИЛИ диагностика):
+// клиенты часто пишут «с платной диагностикой согласен» без слова «выезд».
 const VOLUNTARY_TERMS_ACCEPTANCE =
-  /(?=.*(?:виїзд|выезд))(?=.*(?:діагност|диагност))(?=.*(?:згод|соглас|підход|подход))/iu;
+  /(?=.*(?:виїзд|выезд|діагност|диагност))(?=.*(?:згод|соглас|підход|подход|домовили|договорили|гаразд))/iu;
 const SYMPTOM_QUESTION =
   /(?:що\s+саме|что\s+именно|що\s+відбувається|что\s+происходит|як\s+поводиться|как\s+вед[её]т\s+себя|не\s+вмикається|не\s+включается|не\s+запуска|что\s+случилось|що\s+сталося)/iu;
 const DEVICE_DETAILS_QUESTION = /(?:марк|бренд|модел)/iu;
@@ -186,6 +200,19 @@ export function extractInitialSymptom(text: string): string {
   return symptom;
 }
 
+function extractBareName(text: string): string | undefined {
+  const tokens = text.split(/[\s,;.!?]+/).filter(Boolean);
+  for (const token of tokens.slice(0, 4)) {
+    if (!token) continue;
+    // Приветствия могут быть склеены с запятой («здравствуйте,»), но
+    // отдельное слово-приветствие просто пропускаем.
+    if (GREETING_TOKEN.test(token)) continue;
+    if (NAME_TOKEN_STOP.has(token.toLowerCase())) continue;
+    return /^[\p{L}][\p{L}'’-]{1,29}$/u.test(token) ? token : undefined;
+  }
+  return undefined;
+}
+
 export function extractContactAnswer(
   text: string,
   previousManagerMessage: string
@@ -197,6 +224,11 @@ export function extractContactAnswer(
     : undefined;
   const introducedName = text.match(NAME_INTRODUCTION)?.[1];
   if (introducedName) return { name: introducedName, phone };
+  // «Всё одним сообщением»: имя до телефона без «меня зовут».
+  if (phone) {
+    const bareName = extractBareName(text);
+    if (bareName) return { name: bareName, phone };
+  }
   if (!NAME_QUESTION.test(previousManagerMessage)) return { phone };
 
   const possibleName = text
@@ -279,6 +311,45 @@ export function hasExactAddress(text: string): boolean {
   const hasBuildingNumber = /\b\d{1,4}(?:\b|[/-])/.test(withoutPhone);
   return (ADDRESS_MARKER.test(withoutPhone) && hasBuildingNumber) ||
     STREET_AND_NUMBER.test(withoutPhone);
+}
+
+// Адрес из сообщения-«пакета» без маркера «ул.»: «…бровары, героев украины 1».
+// Город берём из словаря нормализации, улицей считаем сегмент вида
+// «слова + номер дома». Ничего не нашли — возвращаем null.
+export function extractPackedLocation(text: string): string | null {
+  if (!hasExactAddress(text)) return null;
+  const withoutPhone = text.replace(PHONE_PATTERN, " ");
+  const segments = withoutPhone
+    .split(/[,;\n]+/)
+    .map((segment) => segment.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  let place: string | null = null;
+  const addressParts: string[] = [];
+  for (const rawSegment of segments) {
+    let segment = rawSegment;
+    const lower = segment.toLowerCase();
+    if (!place && PLACE_NOMINATIVE[lower]) {
+      place = PLACE_NOMINATIVE[lower];
+      continue;
+    }
+    // Город может стоять в начале сегмента без запятой: «бровары грушевского 13».
+    if (!place) {
+      for (const [key, nominative] of Object.entries(PLACE_NOMINATIVE)) {
+        if (lower.startsWith(`${key} `)) {
+          place = nominative;
+          segment = segment.slice(key.length).trim();
+          break;
+        }
+      }
+    }
+    if (
+      /^[а-яёіїєґ'’ -]{2,50}\s?\d{1,4}(?:[а-яёіїєґ]|\/\d+)?$/i.test(segment)
+    ) {
+      if (!addressParts.includes(segment)) addressParts.push(segment);
+    }
+  }
+  if (addressParts.length === 0) return null;
+  return place ? `${place}, ${addressParts.join(", ")}` : addressParts.join(", ");
 }
 
 export function combineLocationWithAddress(
