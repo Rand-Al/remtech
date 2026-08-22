@@ -2,10 +2,14 @@ import { createServer } from "node:http";
 import { basename } from "node:path";
 import { loadLocalEnv } from "./env.js";
 import { createRateLimiter, type RateLimiter } from "./rateLimiter.js";
-import { validateContacts } from "./settings.js";
+import { validateContacts, validateLlmSettings } from "./settings.js";
 import { contactsWithDefaults, type SiteContacts } from "../../shared/settings.js";
 import { timingSafeEqual } from "node:crypto";
-import { createLlmAdapter, createTelegramAdapter } from "./adapters.js";
+import {
+  createLlmAdapter,
+  createLlmAdapterFromConfig,
+  createTelegramAdapter,
+} from "./adapters.js";
 import {
   createRequest,
   getRequestByToken,
@@ -87,7 +91,15 @@ loadLocalEnv();
 
 const PORT = Number(process.env.RT_PORT ?? 4100);
 
-const llm: LlmAdapter = createLlmAdapter();
+// Адаптер пересоздаётся на лету при сохранении настроек LLM в админке,
+// поэтому объявление изменяемое. До загрузки настроек из базы действует env.
+let llm: LlmAdapter = createLlmAdapter();
+
+function applyLlmSettings(value: unknown): void {
+  llm = createLlmAdapterFromConfig(
+    (value ?? {}) as Parameters<typeof createLlmAdapterFromConfig>[0]
+  );
+}
 const telegram: TelegramAdapter = createTelegramAdapter();
 const attachmentStorage = new LocalAttachmentStorage();
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
@@ -180,6 +192,40 @@ async function handleGetSettings(): Promise<unknown> {
   return { contacts };
 }
 
+// Чтение настроек LLM для админки. Требует пароль, сам API-ключ
+// не возвращается — только признак того, что ключ сохранён.
+async function handleAdminReadSettings(
+  body: { password?: unknown },
+  clientIp: string
+): Promise<unknown> {
+  enforceRateLimit(adminLimiter, clientIp, "admin");
+  if (!process.env.RT_ADMIN_PASSWORD) {
+    throw new HttpError(503, "Административный пароль не задан на сервере");
+  }
+  if (!checkAdminPassword(body.password)) {
+    void logTechnicalEvent("admin_auth_failed", "warning", "Неверный пароль админки", {
+      ip: clientIp,
+    });
+    throw new HttpError(401, "Неверный пароль");
+  }
+  const stored = (await getSiteSetting("llm")) as Record<string, unknown> | null;
+  const fallbackModels = Array.isArray(stored?.fallbackModels)
+    ? (stored?.fallbackModels as unknown[]).filter(
+        (item): item is string => typeof item === "string"
+      )
+    : [];
+  return {
+    llm: {
+      baseUrl: typeof stored?.baseUrl === "string" ? stored.baseUrl : "",
+      model: typeof stored?.model === "string" ? stored.model : "",
+      fallbackModels,
+      enableThinking:
+        typeof stored?.enableThinking === "boolean" ? stored.enableThinking : null,
+      hasApiKey: typeof stored?.apiKey === "string" && stored.apiKey.length > 0,
+    },
+  };
+}
+
 async function handleSaveSettings(
   body: { password?: unknown; key?: unknown; value?: unknown },
   clientIp: string
@@ -194,9 +240,37 @@ async function handleSaveSettings(
     });
     throw new HttpError(401, "Неверный пароль");
   }
-  if (body.key !== "contacts") {
+  if (body.key !== "contacts" && body.key !== "llm") {
     throw new HttpError(400, "Неизвестный раздел настроек");
   }
+
+  if (body.key === "llm") {
+    const validation = validateLlmSettings(body.value);
+    if (!validation.ok) {
+      return { errors: validation.errors };
+    }
+    const value = { ...validation.value };
+    // Пустое поле ключа означает «оставить прежний»: сам ключ обратно
+    // из базы не отдаётся, поэтому клиент не может его повторно отправить.
+    if (value.baseUrl && !value.apiKey) {
+      const stored = await getSiteSetting("llm");
+      const storedApiKey =
+        typeof (stored as Record<string, unknown> | null)?.apiKey === "string"
+          ? ((stored as Record<string, unknown>).apiKey as string)
+          : "";
+      if (storedApiKey) value.apiKey = storedApiKey;
+    }
+    await saveSiteSetting("llm", value);
+    applyLlmSettings(value);
+    await logTechnicalEvent(
+      "settings_updated",
+      "info",
+      `Обновлены настройки LLM: ${llm.name}`,
+      { key: "llm", adapter: llm.name }
+    );
+    return { ok: true, llm: llm.name };
+  }
+
   const validation = validateContacts(body.value);
   if (!validation.ok) {
     return { errors: validation.errors };
@@ -1496,6 +1570,17 @@ const server = createServer(async (request, response) => {
        return;
      }
 
+    if (
+      request.method === "POST" &&
+      (url.pathname === "/api/admin/read-settings" ||
+        url.pathname === "/api/admin/read-settings/")
+    ) {
+      const body = (await readJsonBody(request)) as { password?: unknown };
+      const result = await handleAdminReadSettings(body, clientIp);
+      sendJson(response, 200, result);
+      return;
+    }
+
     if (request.method === "PUT" && (url.pathname === "/api/admin/settings" || url.pathname === "/api/admin/settings/")) {
       const body = (await readJsonBody(request)) as {
         password?: unknown;
@@ -1530,6 +1615,15 @@ const server = createServer(async (request, response) => {
 });
 
 await ensureTelegramReplySchema();
+
+// Настройки LLM из базы приоритетнее env-переменных: применяем до приёма
+// запросов. Сбой базы не мешает старту — работает env-конфигурация или заглушка.
+try {
+  const storedLlm = await getSiteSetting("llm");
+  if (storedLlm !== null) applyLlmSettings(storedLlm);
+} catch (error) {
+  console.error("Не удалось применить настройки LLM из базы:", error);
+}
 
 let lastTelegramPollingErrorAt = 0;
 const stopTelegramPolling = telegram.startManagerReplyPolling(

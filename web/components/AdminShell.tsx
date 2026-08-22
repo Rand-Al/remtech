@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import AdminContacts from "@/components/AdminContacts";
+import AdminLlm from "@/components/AdminLlm";
 
 const CHAT_SERVER_URL =
   process.env.NEXT_PUBLIC_CHAT_SERVER_URL ?? "http://localhost:4100";
@@ -31,8 +32,22 @@ function prettyModel(value: string | undefined): string {
   return value;
 }
 
+type Section = "contacts" | "llm";
+
+const SECTION_TITLES: Record<Section, { title: string; lede: string }> = {
+  contacts: {
+    title: "Контакты",
+    lede: "Значения применяются на всём сайте сразу после сохранения - без пересборки.",
+  },
+  llm: {
+    title: "LLM-провайдер",
+    lede: "Провайдер применяется к чат-серверу сразу после сохранения - без перезапуска.",
+  },
+};
+
 export default function AdminShell() {
   const [authenticated, setAuthenticated] = useState(false);
+  const [section, setSection] = useState<Section>("contacts");
   const [loginValue, setLoginValue] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -166,7 +181,20 @@ export default function AdminShell() {
       <div className="admin-layout">
         <nav className="admin-sidebar" aria-label="Разделы админки">
           <p className="admin-sidebar-title">Разделы</p>
-          <button type="button" className="is-active">Контакты</button>
+          <button
+            type="button"
+            className={section === "contacts" ? "is-active" : ""}
+            onClick={() => setSection("contacts")}
+          >
+            Контакты
+          </button>
+          <button
+            type="button"
+            className={section === "llm" ? "is-active" : ""}
+            onClick={() => setSection("llm")}
+          >
+            LLM
+          </button>
           <button type="button" disabled>Цены <em>скоро</em></button>
           <button type="button" disabled>FAQ <em>скоро</em></button>
 
@@ -196,11 +224,17 @@ export default function AdminShell() {
 
         <main className="admin-content">
           <p className="section-kicker">Настройки сайта</p>
-          <h1>Контакты</h1>
-          <p className="admin-lede">
-            Значения применяются на всём сайте сразу после сохранения - без пересборки.
-          </p>
-          <AdminContacts password={passwordRef.current} onAuthError={handleAuthError} />
+          <h1>{SECTION_TITLES[section].title}</h1>
+          <p className="admin-lede">{SECTION_TITLES[section].lede}</p>
+          {section === "contacts" ? (
+            <AdminContacts password={passwordRef.current} onAuthError={handleAuthError} />
+          ) : (
+            <AdminLlm
+              password={passwordRef.current}
+              onAuthError={handleAuthError}
+              onSaved={loadHealth}
+            />
+          )}
         </main>
       </div>
     </div>

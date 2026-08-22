@@ -38,32 +38,56 @@ function parseOptionalPositiveInteger(value: string | undefined): number | undef
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
-export function createLlmAdapter(): LlmAdapter {
-  const baseUrl = process.env.RT_LLM_BASE_URL;
-  if (baseUrl) {
-    const configuredFallbacks = process.env.RT_LLM_FALLBACK_MODELS?.trim();
-    const isOpenRouter = baseUrl.includes("openrouter.ai");
-    const isOpenCodeZen = baseUrl.includes("opencode.ai/zen");
-    const fallbackModels = configuredFallbacks
-      ? parseModelList(configuredFallbacks)
-      : isOpenRouter
-        ? DEFAULT_OPENROUTER_FALLBACKS
-        : isOpenCodeZen
-          ? DEFAULT_ZEN_FALLBACKS
-          : [];
+export interface LlmAdapterConfig {
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
+  fallbackModels?: string[];
+  enableThinking?: boolean | null;
+  timeoutMs?: number;
+  attemptTimeoutMs?: number;
+}
 
-    return new OpenAiCompatibleLlmAdapter({
-      baseUrl,
-      apiKey: process.env.RT_LLM_API_KEY,
-      model: process.env.RT_LLM_MODEL ?? "local-model",
-      fallbackModels,
-      useNativeModelFallbacks: isOpenRouter,
-      enableThinking: parseOptionalBoolean(process.env.RT_LLM_ENABLE_THINKING),
-      timeoutMs: Number(process.env.RT_LLM_TIMEOUT_MS ?? 120_000),
-      attemptTimeoutMs: Number(process.env.RT_LLM_ATTEMPT_TIMEOUT_MS ?? 20_000),
-    });
-  }
-  return new StubLlmAdapter();
+// Единая точка сборки LLM-адаптера: используется и для env-переменных,
+// и для настроек из базы (раздел "LLM" админки).
+export function createLlmAdapterFromConfig(config: LlmAdapterConfig): LlmAdapter {
+  const baseUrl = config.baseUrl?.trim();
+  if (!baseUrl) return new StubLlmAdapter();
+
+  const isOpenRouter = baseUrl.includes("openrouter.ai");
+  const isOpenCodeZen = baseUrl.includes("opencode.ai/zen");
+  const configuredFallbacks = config.fallbackModels?.filter(Boolean) ?? [];
+  const fallbackModels = configuredFallbacks.length
+    ? [...new Set(configuredFallbacks)]
+    : isOpenRouter
+      ? DEFAULT_OPENROUTER_FALLBACKS
+      : isOpenCodeZen
+        ? DEFAULT_ZEN_FALLBACKS
+        : [];
+
+  return new OpenAiCompatibleLlmAdapter({
+    baseUrl,
+    apiKey: config.apiKey?.trim() || undefined,
+    model: config.model ?? "local-model",
+    fallbackModels,
+    useNativeModelFallbacks: isOpenRouter,
+    enableThinking: config.enableThinking ?? undefined,
+    timeoutMs:
+      config.timeoutMs ?? Number(process.env.RT_LLM_TIMEOUT_MS ?? 120_000),
+    attemptTimeoutMs:
+      config.attemptTimeoutMs ??
+      Number(process.env.RT_LLM_ATTEMPT_TIMEOUT_MS ?? 20_000),
+  });
+}
+
+export function createLlmAdapter(): LlmAdapter {
+  return createLlmAdapterFromConfig({
+    baseUrl: process.env.RT_LLM_BASE_URL,
+    apiKey: process.env.RT_LLM_API_KEY,
+    model: process.env.RT_LLM_MODEL ?? "local-model",
+    fallbackModels: parseModelList(process.env.RT_LLM_FALLBACK_MODELS),
+    enableThinking: parseOptionalBoolean(process.env.RT_LLM_ENABLE_THINKING) ?? null,
+  });
 }
 
 export function createTelegramAdapter(): TelegramAdapter {

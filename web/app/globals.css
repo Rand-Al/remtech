@@ -4356,6 +4356,7 @@ h1 {
 
 .a-field input,
 .admin-field input,
+.admin-field select,
 .admin-field textarea {
   width: 100%;
   padding: 10px 2px;
@@ -4363,6 +4364,7 @@ h1 {
   background: transparent;
   border: 0;
   border-bottom: 1px solid var(--line);
+  border-radius: 0;
   font: inherit;
   font-size: 15px;
   outline: none;
@@ -4371,8 +4373,16 @@ h1 {
 
 .a-field input:focus,
 .admin-field input:focus,
+.admin-field select:focus,
 .admin-field textarea:focus {
   border-bottom-color: var(--accent);
+}
+
+.admin-hint {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.45;
 }
 
 .admin-login-box .a-error {

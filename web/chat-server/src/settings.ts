@@ -30,6 +30,91 @@ function checkLocalized(
   }
 }
 
+// Настройки LLM-провайдера хранятся в базе под ключом "llm".
+// Пустой baseUrl означает возврат к заглушке (StubLlmAdapter).
+export interface LlmSettings {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  fallbackModels: string[];
+  enableThinking: boolean | null;
+}
+
+export type LlmValidation =
+  | { ok: true; value: LlmSettings }
+  | { ok: false; errors: string[] };
+
+const LLM_URL_PATTERN = /^https?:\/\/\S+$/i;
+
+export const EMPTY_LLM_SETTINGS: LlmSettings = {
+  baseUrl: "",
+  apiKey: "",
+  model: "",
+  fallbackModels: [],
+  enableThinking: null,
+};
+
+export function validateLlmSettings(input: unknown): LlmValidation {
+  const errors: string[] = [];
+  if (typeof input !== "object" || input === null) {
+    return { ok: false, errors: ["Настройки LLM переданы неверно"] };
+  }
+  const raw = input as Record<string, unknown>;
+
+  const baseUrl = typeof raw.baseUrl === "string" ? raw.baseUrl.trim() : "";
+  if (baseUrl.length > 300) {
+    errors.push("Адрес API: максимум 300 символов");
+  } else if (baseUrl && !LLM_URL_PATTERN.test(baseUrl)) {
+    errors.push("Адрес API: должен начинаться с http:// или https://");
+  }
+
+  // Пустой адрес — осознанный выбор «работать на заглушке».
+  if (!baseUrl) {
+    if (errors.length > 0) return { ok: false, errors };
+    return { ok: true, value: { ...EMPTY_LLM_SETTINGS } };
+  }
+
+  const model = typeof raw.model === "string" ? raw.model.trim() : "";
+  if (!model) {
+    errors.push("Модель: укажите имя модели");
+  } else if (model.length > 120) {
+    errors.push("Модель: максимум 120 символов");
+  }
+
+  const apiKey = typeof raw.apiKey === "string" ? raw.apiKey.trim() : "";
+  if (apiKey.length > 300) {
+    errors.push("API-ключ: максимум 300 символов");
+  }
+
+  let fallbackModels: string[] = [];
+  const rawFallbacks = raw.fallbackModels;
+  if (typeof rawFallbacks === "string") {
+    fallbackModels = rawFallbacks
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  } else if (Array.isArray(rawFallbacks)) {
+    fallbackModels = rawFallbacks.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (fallbackModels.some((item) => item.length > 120)) {
+    errors.push("Резервные модели: максимум 120 символов на модель");
+  }
+  if (fallbackModels.length > 10) {
+    errors.push("Резервные модели: не больше 10");
+  }
+  fallbackModels = [...new Set(fallbackModels)].filter((item) => item !== model);
+
+  let enableThinking: boolean | null = null;
+  if (typeof raw.enableThinking === "boolean") enableThinking = raw.enableThinking;
+
+  if (errors.length > 0) return { ok: false, errors };
+
+  return {
+    ok: true,
+    value: { baseUrl, apiKey, model, fallbackModels, enableThinking },
+  };
+}
+
 export function validateContacts(input: unknown): ContactsValidation {
   const errors: string[] = [];
   if (typeof input !== "object" || input === null) {
