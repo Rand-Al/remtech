@@ -1,3 +1,4 @@
+import Link from "next/link";
 import MobileNav from "@/components/MobileNav";
 
 export type NavVariant = "home" | "kotly" | "service";
@@ -69,11 +70,15 @@ export default function Header({
 
       <div className="header-actions">
         <div className="language-switch" aria-label={t.langAria}>
-          {lang === "ru" && altLangHref && <a href={altLangHref}>UA</a>}
+          {lang === "ru" && altLangHref && (
+            <Link href={altLangHref} scroll={false}>UA</Link>
+          )}
           <button className="is-active" type="button" aria-current="true">
             {lang === "ru" ? "RU" : "UA"}
           </button>
-          {lang === "uk" && altLangHref && <a href={altLangHref}>RU</a>}
+          {lang === "uk" && altLangHref && (
+            <Link href={altLangHref} scroll={false}>RU</Link>
+          )}
         </div>
         <a className="phone-link" href="tel:+380000000000">+38 000 000 00 00</a>
         <button className="header-chat-button" type="button" data-open-chat>{t.chat}</button>
