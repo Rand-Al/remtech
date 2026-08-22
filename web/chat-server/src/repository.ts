@@ -283,6 +283,7 @@ export interface RequestDetails {
   id: string;
   clientId: number;
   number: string;
+  createdAt: string;
   service: string;
   symptom: string | null;
   status: string;
@@ -302,7 +303,7 @@ export async function getRequestDetails(
   token: string
 ): Promise<RequestDetails | null> {
   const result = await pool.query(
-    `SELECT r.id, r.client_id, r.number, r.service, r.symptom, r.status, r.location, r.urgency,
+    `SELECT r.id, r.client_id, r.number, r.created_at, r.service, r.symptom, r.status, r.location, r.urgency,
             r.lang, r.terms_accepted, r.telegram_notified, r.telegram_card_finalized,
             c.name, c.phone, d.notes AS device_details,
             (SELECT COUNT(*) FROM attachments a WHERE a.request_id = r.id) AS attachment_count
@@ -318,6 +319,7 @@ export async function getRequestDetails(
     id: String(row.id),
     clientId: Number(row.client_id),
     number: row.number as string,
+    createdAt: new Date(row.created_at as string).toISOString(),
     service: row.service as string,
     symptom: (row.symptom as string | null) ?? null,
     status: row.status as string,

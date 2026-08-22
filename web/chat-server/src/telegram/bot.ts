@@ -60,6 +60,15 @@ const SERVICE_LABELS: Record<string, string> = {
   other: "Другая бытовая техника",
 };
 
+const EQUIPMENT_TOPIC_LABELS: Record<string, string> = {
+  "boiler-repair": "Котёл",
+  "boiler-cleaning": "Котёл",
+  "boiler-installation": "Котёл",
+  washer: "Стиральная машина",
+  dishwasher: "Посудомоечная машина",
+  other: "Другая техника",
+};
+
 function valueOrDash(value: string, maxLength = 900): string {
   const trimmed = value.trim();
   const source = trimmed || "не указано";
@@ -118,8 +127,26 @@ export function formatTelegramRequest(request: TelegramRequest): string {
 }
 
 export function formatRequestTopicName(request: TelegramRequest): string {
-  const service = SERVICE_LABELS[request.service] ?? request.service ?? "Заявка";
-  return `${request.number} | ${service}`.replace(/\s+/g, " ").trim().slice(0, 128);
+  const equipment = EQUIPMENT_TOPIC_LABELS[request.service] ?? "Техника";
+  const stamp = formatTopicTimestamp(request.createdAt);
+  return [stamp, equipment].filter(Boolean).join("-").replace(/\s+/g, " ").trim().slice(0, 128);
+}
+
+function formatTopicTimestamp(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("uk-UA", {
+    timeZone: "Europe/Kyiv",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("day")}.${get("month")}.${get("year")}-${get("hour")}:${get("minute")}`;
 }
 
 export function parseManagerReply(
@@ -186,11 +213,15 @@ export class TelegramBotAdapter implements TelegramAdapter {
     let threadId: number | undefined;
     try {
       threadId = await this.createForumTopic(formatRequestTopicName(request));
+      // Служебное сообщение «Тема создана» нельзя отправить без уведомления,
+      // поэтому карточка уходит без звука: одно уведомление на заявку — от создания темы
       return await this.sendMessage(
         formatTelegramRequest(request),
         threadId,
         undefined,
-        "HTML"
+        "HTML",
+        undefined,
+        true
       );
     } catch (error) {
       if (threadId) await this.deleteForumTopic(threadId).catch(() => undefined);
@@ -350,7 +381,8 @@ export class TelegramBotAdapter implements TelegramAdapter {
     threadId?: number,
     replyToMessageId?: number,
     parseMode?: "HTML",
-    chatId = this.chatId
+    chatId = this.chatId,
+    disableNotification = false
   ): Promise<TelegramMessageReference> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -370,6 +402,7 @@ export class TelegramBotAdapter implements TelegramAdapter {
             ...(replyToMessageId
               ? { reply_parameters: { message_id: replyToMessageId } }
               : {}),
+            ...(disableNotification ? { disable_notification: true } : {}),
           }),
           signal: controller.signal,
         }

@@ -81,17 +81,59 @@ export function explicitlyAcceptsTerms(text: string): boolean {
   return VOLUNTARY_TERMS_ACCEPTANCE.test(text) && !TERMS_NEGATIVE.test(text);
 }
 
+const PLACE_NOMINATIVE: Record<string, string> = {
+  "бровари": "Бровари",
+  "броварах": "Бровари",
+  "броварів": "Бровари",
+  "бровары": "Бровари",
+  "київ": "Київ",
+  "києві": "Київ",
+  "киев": "Київ",
+  "киеве": "Київ",
+};
+
+export function normalizePlaceName(place: string): string {
+  const stripped = place.trim().replace(/^[.,;:\s]+|[.,;:\s]+$/g, "");
+  return PLACE_NOMINATIVE[stripped.toLowerCase()] ?? place.trim();
+}
+
 export function extractExplicitLocation(text: string): string | null {
   const placeMatch = text.match(
     /(?:(?:нахожусь|находимся|знаходжусь|знаходимось)\s+(?:в|у)|(?:я|мы|ми)\s+(?:в|у))\s+([\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,2})/iu
   );
   if (!placeMatch) return null;
 
-  const place = placeMatch[1].trim();
+  const place = normalizePlaceName(placeMatch[1]);
   const addressMatch = text.match(
-    /((?:вул(?:иця|иці|\.)?|улиц(?:а|е|ы)?|ул\.)\s*[\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,2}\s*,?\s*\d{1,4}(?:[\p{L}]|[/-]\d+)?)/iu
+    /((?:вул(?:иця|иці|\.)?|улиц(?:а|е|ы)?|ул\.)\s*[\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,2}\s*,?\s*(?:буд(?:инок|\.)?|дом|д\.)?\s*,?\s*\d{1,4}(?:[\p{L}]|[/-]\d+)?(?:\s*,?\s*кв(?:артира|\.)?\s*\d{1,4})?)/iu
   );
   return addressMatch ? `${place}, ${addressMatch[1].trim()}` : place;
+}
+
+const GREETING_SENTENCE =
+  /^(?:добрий\s+(?:день|ранок|вечір)|доброго\s+дня|добрый\s+(?:день|вечер)|доброе\s+утро|здрастуйте|здравствуйте|вітаю|привіт|привет|хай)(?![\p{L}])/iu;
+const CONTACT_SENTENCE =
+  /(?:мене\s+звати|меня\s+зовут|моє\s+ім['’]?я|мо[её]\s+имя|номер\s+телефону|номер\s+телефона|телефон)/iu;
+const PLACE_SENTENCE =
+  /(?:(?:я|мы|ми)\s+(?:в|у)\s+[\p{L}'’-]|(?:нахожусь|находимся|знаходжусь|знаходимось)\s+(?:в|у)\b)/iu;
+
+export function extractInitialSymptom(text: string): string {
+  const sentences = text.match(/[^.!?]+[.!?]?/g) ?? [text];
+  const kept = sentences.filter((sentence) => {
+    const trimmed = sentence.trim();
+    if (!trimmed) return false;
+    if (GREETING_SENTENCE.test(trimmed) && !trimmed.replace(GREETING_SENTENCE, "").replace(/[\s,!:;.'’-]/g, "")) {
+      return false;
+    }
+    if (VOLUNTARY_TERMS_ACCEPTANCE.test(trimmed)) return false;
+    if (hasExactAddress(trimmed) || (PLACE_SENTENCE.test(trimmed) && ADDRESS_MARKER.test(trimmed))) {
+      return false;
+    }
+    if (CONTACT_SENTENCE.test(trimmed) || PHONE_PATTERN.test(trimmed)) return false;
+    return true;
+  });
+  const symptom = kept.map((sentence) => sentence.trim()).join(" ").replace(/\s+/g, " ").trim();
+  return symptom || text.trim();
 }
 
 export function extractContactAnswer(
@@ -244,7 +286,17 @@ export function hasLocationAnswer(messages: ConversationMessage[]): boolean {
 export function getLocationAnswer(messages: ConversationMessage[]): string | null {
   const index = getLocationAnswerIndex(messages);
   if (index < 0) return null;
-  return extractExplicitLocation(messages[index].text) ?? messages[index].text.trim();
+  const explicit = extractExplicitLocation(messages[index].text);
+  if (explicit) return explicit;
+  const answer = messages[index].text
+    .trim()
+    .replace(/^(?:(?:я|мы|ми)\s+)?(?:нахожусь|находимся|знаходжусь|знаходимось)\s+(?:в|у)\s+/iu, "")
+    .replace(/^(?:в|у)\s+/iu, "")
+    .replace(/^(?:м(?:істо|\.)?|с(?:ело|\.)?|смт)\s+/iu, "")
+    .replace(/[.,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalizePlaceName(answer);
 }
 
 export function isAwaitingLocation(messages: ConversationMessage[]): boolean {

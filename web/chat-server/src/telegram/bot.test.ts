@@ -10,6 +10,7 @@ import type { TelegramRequest } from "./adapter.js";
 
 const request: TelegramRequest = {
   number: "RT-TEST-1",
+  createdAt: "2026-08-22T11:15:00.000Z",
   service: "dishwasher",
   device: "dishwasher",
   deviceDetails: "Bosch SMS46MI04E",
@@ -130,9 +131,23 @@ test("creates a separate topic and keeps request messages inside it", async () =
   assert.match(calls[0].url, /createForumTopic$/);
   assert.equal(calls[0].body.name, formatRequestTopicName(request));
   assert.equal(calls[1].body.message_thread_id, 77);
+  assert.equal(calls[1].body.disable_notification, true);
   assert.equal(calls[2].body.message_thread_id, 77);
   assert.deepEqual(calls[2].body.reply_parameters, { message_id: 201 });
+  assert.equal(calls[2].body.disable_notification, undefined);
   assert.equal(card.threadId, 77);
+});
+
+test("names the request topic by local date, time and equipment", () => {
+  assert.equal(formatRequestTopicName(request), "22.08.2026-14:15-Посудомоечная машина");
+  assert.equal(
+    formatRequestTopicName({ ...request, service: "boiler-repair", createdAt: "2026-01-02T22:05:00.000Z" }),
+    "03.01.2026-00:05-Котёл"
+  );
+  assert.equal(
+    formatRequestTopicName({ ...request, createdAt: "не дата" }),
+    "Посудомоечная машина"
+  );
 });
 
 test("falls back to the common request topic when topic creation fails", async () => {
@@ -171,6 +186,7 @@ test("falls back to the common request topic when topic creation fails", async (
 
   assert.equal(calls.length, 2);
   assert.equal(calls[1].body.message_thread_id, 10);
+  assert.equal(calls[1].body.disable_notification, undefined);
   assert.equal(card.threadId, 10);
   assert.match(card.warning ?? "", /not enough rights/);
 });

@@ -51,6 +51,7 @@ import {
   extractContactAnswer,
   extractDeviceDetailsAnswer,
   extractExplicitLocation,
+  extractInitialSymptom,
   getLocationAnswer,
   getTermsDecision,
   hasInvalidPhoneCandidate,
@@ -344,7 +345,7 @@ async function handleSendMessage(
     const location = extractExplicitLocation(text);
     const fields: RequestFields = {
       service: detectedService ?? (typeof body.service === "string" ? body.service : "other"),
-      symptom: text,
+      symptom: extractInitialSymptom(text),
       deviceType: detectedService ?? (typeof body.service === "string" ? body.service : "other"),
       location: location ?? undefined,
       name: contact.name,
@@ -493,8 +494,8 @@ async function handleAgentReply(body: {
     messages.unshift({
       role: "system",
       content: language === "ru"
-        ? "Текущий разговор только начался. В этом ответе не спрашивай населённый пункт, адрес, имя, телефон, срочность или согласие с оплатой. Сначала ответь на вопрос клиента либо задай один естественный вопрос о самой технике или услуге, который покажет внимание к ситуации."
-        : "Поточна розмова лише почалася. У цій відповіді не питай населений пункт, адресу, ім’я, телефон, терміновість або згоду з оплатою. Спочатку дай відповідь на питання клієнта або постав одне природне питання про саму техніку чи послугу, яке покаже увагу до ситуації.",
+        ? "Текущий разговор только начался. В этом ответе не спрашивай населённый пункт, адрес, имя, телефон, срочность или согласие с оплатой. Сначала ответь на вопрос клиента либо задай один естественный вопрос о самой технике или услуге, который покажет внимание к ситуации. Если жалоба уже понятна и это уместно, спроси, есть ли у клиента фото техники или дисплея с ошибкой — фото можно прикрепить прямо в этот чат."
+        : "Поточна розмова лише почалася. У цій відповіді не питай населений пункт, адресу, ім’я, телефон, терміновість або згоду з оплатою. Спочатку дай відповідь на питання клієнта або постав одне природне питання про саму техніку чи послугу, яке покаже увагу до ситуації. Якщо скарга вже зрозуміла і це доречно, запитай, чи є у клієнта фото техніки або дисплея з помилкою — фото можна прикріпити просто в цей чат.",
     });
   }
 
@@ -639,6 +640,7 @@ async function maybeNotifyTelegram(token: string, force = false): Promise<void> 
 
   const telegramRequest = {
     number: details.number,
+    createdAt: details.createdAt,
     service: details.service,
     device: details.service,
     deviceDetails: details.deviceDetails ?? "",
@@ -1038,6 +1040,7 @@ function getEarlyServiceFollowUp(
     .join(" ");
   const brandAlreadyAsked = /(марк|модел)/i.test(managerText);
   const maintenanceAlreadyAsked = /(востаннє.*обслугов|коли.*обслугов|последн.*обслуж)/i.test(managerText);
+  const photoAlreadyAsked = /(фото|фотограф)/i.test(managerText);
 
   if (service === "boiler-cleaning" && !maintenanceAlreadyAsked) {
     return language === "ru"
@@ -1053,6 +1056,11 @@ function getEarlyServiceFollowUp(
     return language === "ru"
       ? "Это новая установка или нужно заменить старый котёл?"
       : "Це нове встановлення чи потрібно замінити старий котел?";
+  }
+  if (!photoAlreadyAsked) {
+    return language === "ru"
+      ? "Есть возможность прикрепить фото техники или дисплея с ошибкой? Фото можно отправить прямо в этот чат."
+      : "Чи є можливість прикріпити фото техніки чи дисплея з помилкою? Фото можна надіслати просто в цей чат.";
   }
   return language === "ru"
     ? "Что ещё заметили в работе техники?"

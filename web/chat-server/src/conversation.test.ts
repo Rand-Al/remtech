@@ -12,6 +12,7 @@ import {
   extractContactAnswer,
   extractDeviceDetailsAnswer,
   extractExplicitLocation,
+  extractInitialSymptom,
   getLocationAnswer,
   getTermsDecision,
   hasInvalidPhoneCandidate,
@@ -67,7 +68,7 @@ test("extracts a complete request from the first client message", () => {
   assert.equal(detectServiceFromText(COMPLETE_FIRST_MESSAGE), "washer");
   assert.equal(
     extractExplicitLocation(COMPLETE_FIRST_MESSAGE),
-    "Броварах, улица Киевская 34"
+    "Бровари, улица Киевская 34"
   );
   assert.equal(hasExactAddress(COMPLETE_FIRST_MESSAGE), true);
   assert.deepEqual(extractContactAnswer(COMPLETE_FIRST_MESSAGE, ""), {
@@ -75,6 +76,34 @@ test("extracts a complete request from the first client message", () => {
     phone: "050 123 45 67",
   });
   assert.equal(explicitlyAcceptsTerms(COMPLETE_FIRST_MESSAGE), true);
+});
+
+test("keeps street, building and apartment when the first message has a full address", () => {
+  assert.equal(
+    extractExplicitLocation(
+      "Я у Броварах, вулиця Київська, будинок 15, квартира 3. Пральна машина Bosch."
+    ),
+    "Бровари, вулиця Київська, будинок 15, квартира 3"
+  );
+  assert.equal(
+    extractExplicitLocation("Нахожусь в Броварах, улица Ленина, дом 12, кв. 5"),
+    "Бровари, улица Ленина, дом 12, кв. 5"
+  );
+});
+
+test("stores only the malfunction in the symptom field", () => {
+  assert.equal(
+    extractInitialSymptom(
+      "Добрий день! Кіл Беретта не запалюється, помилка A01. Я у Броварах, вулиця Гали, будинок 45, квартира 12. Згоден на платний виїзд і діагностику. Мене звати Тарас, телефон 0671112233."
+    ),
+    "Кіл Беретта не запалюється, помилка A01."
+  );
+  assert.equal(
+    extractInitialSymptom(COMPLETE_FIRST_MESSAGE),
+    "Стиральная машина Samsung не сливает воду."
+  );
+  assert.equal(extractInitialSymptom("Привіт! Пральна машина не гріє воду."), "Пральна машина не гріє воду.");
+  assert.equal(extractInitialSymptom("Котёл шумит, но дом ещё не остыл"), "Котёл шумит, но дом ещё не остыл");
 });
 
 test("does not treat a refusal as voluntary acceptance of payment terms", () => {

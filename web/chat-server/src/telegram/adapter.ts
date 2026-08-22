@@ -1,5 +1,6 @@
 export interface TelegramRequest {
   number: string;
+  createdAt: string;
   service: string;
   device: string;
   deviceDetails: string;
