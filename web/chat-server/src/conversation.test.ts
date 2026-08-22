@@ -150,6 +150,25 @@ test("updates the requested service when the client names different equipment", 
   assert.equal(detectServiceFromText("она выключена"), null);
 });
 
+test("recognizes a washing machine from spin and wash phrasing", () => {
+  // Реальный сценарий: клиент сначала назвал «другую технику», потом уточнил.
+  assert.equal(detectServiceFromText("а для стирки?"), "washer");
+  assert.equal(
+    detectServiceFromText("сильто трясется во время отжима"),
+    "washer"
+  );
+  assert.equal(detectServiceFromText("баратиме віджимати?"), "washer");
+});
+
+test("a greeting-only first message leaves the symptom empty", () => {
+  assert.equal(extractInitialSymptom("привет"), "");
+  assert.equal(extractInitialSymptom("здравствуйте!"), "");
+  assert.equal(
+    extractInitialSymptom("привет. сильно трясется при отжиме"),
+    "сильно трясется при отжиме"
+  );
+});
+
 test("accepts only complete Ukrainian phone numbers", () => {
   assert.equal(isValidUkrainianPhone("050 123 45 67"), true);
   assert.equal(isValidUkrainianPhone("+380 50 123 45 67"), true);

@@ -45,7 +45,7 @@ const NON_LOCATION_ANSWER =
 const VOLUNTARY_TERMS_ACCEPTANCE =
   /(?=.*(?:виїзд|выезд))(?=.*(?:діагност|диагност))(?=.*(?:згод|соглас|підход|подход))/iu;
 const SYMPTOM_QUESTION =
-  /(?:що\s+саме|что\s+именно|що\s+відбувається|что\s+происходит|як\s+поводиться|как\s+вед[её]т\s+себя|не\s+вмикається|не\s+включается|не\s+запуска)/iu;
+  /(?:що\s+саме|что\s+именно|що\s+відбувається|что\s+происходит|як\s+поводиться|как\s+вед[её]т\s+себя|не\s+вмикається|не\s+включается|не\s+запуска|что\s+случилось|що\s+сталося)/iu;
 const DEVICE_DETAILS_QUESTION = /(?:марк|бренд|модел)/iu;
 const UNKNOWN_DEVICE_DETAILS =
   /^(?:(?:марку|марка|модель|моделі|бренд)\s+)?(?:не\s+знаю|не\s+пам['’]?ятаю|не\s+помню|невідомо|неизвестно)[.!]?$/iu;
@@ -59,7 +59,9 @@ export type DetectedService =
 
 export function detectServiceFromText(text: string): DetectedService | null {
   if (/(посудом|посудомий|dishwasher)/i.test(text)) return "dishwasher";
-  if (/(стирал|прал|washer)/i.test(text)) return "washer";
+  // «стир» покрывает и «стиралка/стиральная», и «для стирки»;
+  // «отжим» — симптом только стиральной машины.
+  if (/(стир|прал|отжим|віджим|washer)/i.test(text)) return "washer";
   if (!/(кот(?:[её]л|ел|л(?:а|у|ом|и|ів)?)|boiler)/i.test(text)) return null;
   if (/(чист|обслуж|обслугов)/i.test(text)) return "boiler-cleaning";
   if (/(установ|встанов|замен|замін)/i.test(text)) return "boiler-installation";
@@ -179,7 +181,9 @@ export function extractInitialSymptom(text: string): string {
     return true;
   });
   const symptom = kept.map((sentence) => sentence.trim()).join(" ").replace(/\s+/g, " ").trim();
-  return symptom || text.trim();
+  // Если всё отфильтровалось (например, сообщение было только приветствием),
+  // симптом пустой — он дополнится позже по ходу разговора.
+  return symptom;
 }
 
 export function extractContactAnswer(
