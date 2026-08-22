@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { basename } from "node:path";
 import { loadLocalEnv } from "./env.js";
+import { createRateLimiter, type RateLimiter } from "./rateLimiter.js";
 import { createLlmAdapter, createTelegramAdapter } from "./adapters.js";
 import {
   createRequest,
@@ -92,6 +93,48 @@ const ALLOWED_ATTACHMENT_TYPES = new Set([
   "image/heic",
   "image/heif",
 ]);
+
+// Ограничения частоты запросов (антиспам). Счётчики в памяти:
+// перезапуск сервера сбрасывает окна — для этапа 1 это осознанное упрощение.
+const RATE_WINDOW_MS = 5 * 60 * 1000;
+const MESSAGE_RATE_LIMIT = Number(process.env.RT_RATE_LIMIT_MESSAGES ?? 30);
+const NEW_REQUEST_HOURLY_LIMIT = Number(process.env.RT_RATE_LIMIT_NEW_REQUESTS ?? 5);
+const ATTACHMENT_RATE_LIMIT = 90;
+const POLL_RATE_LIMIT = 600;
+const messageLimiter = createRateLimiter(MESSAGE_RATE_LIMIT, RATE_WINDOW_MS);
+const newRequestLimiter = createRateLimiter(NEW_REQUEST_HOURLY_LIMIT, 60 * 60 * 1000);
+const attachmentLimiter = createRateLimiter(ATTACHMENT_RATE_LIMIT, RATE_WINDOW_MS);
+const pollLimiter = createRateLimiter(POLL_RATE_LIMIT, RATE_WINDOW_MS);
+
+// За обратным прокси (RT_TRUST_PROXY=true) адрес берётся из X-Forwarded-For,
+// при прямом доступе используется адрес сокета, чтобы клиент не подделал IP.
+function getClientIp(request: import("node:http").IncomingMessage): string {
+  if (process.env.RT_TRUST_PROXY === "true") {
+    const forwarded = request.headers["x-forwarded-for"];
+    const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return request.socket.remoteAddress ?? "unknown";
+}
+
+// Финальная реплика автоматического менеджера об оформлении заявки:
+// по ней клиентский чат понимает, что диалог завершён
+const REQUEST_COMPLETED_PATTERN = /(заявк[ауи]?\s+оформ|звернення\s+оформ)/i;
+
+function enforceRateLimit(
+  limiter: RateLimiter,
+  key: string,
+  kind: string
+): void {
+  if (limiter.check(key)) return;
+  void logTechnicalEvent(
+    "rate_limited",
+    "warning",
+    `Превышен лимит запросов: ${kind}`,
+    { ip: key, kind }
+  );
+  throw new HttpError(429, "Занадто багато запитів. Спробуйте за кілька хвилин.");
+}
 
 const SYSTEM_PROMPT = [
   "Ти — менеджер сервісу ремонту побутової техніки RemTech (Бровари та Броварський район).",
@@ -332,7 +375,8 @@ async function handleSendMessage(
     service?: string;
     text?: string;
     greeting?: string;
-  }
+  },
+  clientIp: string
 ): Promise<unknown> {
   const text = typeof body.text === "string" ? body.text.trim() : "";
   if (!text) {
@@ -345,6 +389,7 @@ async function handleSendMessage(
   const token = typeof body.token === "string" ? body.token : "";
 
   if (!token) {
+    enforceRateLimit(newRequestLimiter, clientIp, "new-requests");
     const detectedService = detectServiceFromText(text);
     const service = detectedService ?? normalizeService(body.service);
     const contact = extractContactAnswer(text, "");
@@ -472,7 +517,7 @@ async function handleAgentReply(body: {
   const requestAlreadyConfirmed = history.some(
     (message) =>
       message.sender === "manager" &&
-      /(заявк[ауи]?\s+оформ|звернення\s+оформ)/i.test(message.text)
+      REQUEST_COMPLETED_PATTERN.test(message.text)
   );
   const messages: { role: "system" | "user" | "assistant"; content: string }[] = history.map((m) => ({
     role: m.sender === "client" ? "user" : "assistant",
@@ -653,7 +698,9 @@ async function handleAgentReply(body: {
 
   await maybeNotifyTelegram(token);
 
-  return { text: reply };
+  const requestCompleted =
+    REQUEST_COMPLETED_PATTERN.test(reply) || requestAlreadyConfirmed;
+  return { text: reply, requestCompleted };
 }
 
 async function maybeNotifyTelegram(token: string, force = false): Promise<void> {
@@ -1304,7 +1351,10 @@ const server = createServer(async (request, response) => {
   }
 
   try {
+    const clientIp = getClientIp(request);
+
     if (request.method === "POST" && url.pathname === "/api/attachments") {
+      enforceRateLimit(attachmentLimiter, clientIp, "attachments");
       const result = await handleAttachmentUpload(request, url);
       sendJson(response, 201, result);
       return;
@@ -1316,18 +1366,20 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "POST" && (url.pathname === "/api/chat" || url.pathname === "/api/chat/")) {
+      enforceRateLimit(messageLimiter, clientIp, "messages");
       const body = (await readJsonBody(request)) as {
         token?: string;
         service?: string;
         text?: string;
         greeting?: string;
       };
-      const result = await handleSendMessage(body);
+      const result = await handleSendMessage(body, clientIp);
       sendJson(response, 200, result);
       return;
     }
 
     if (request.method === "POST" && url.pathname === "/api/agent-reply") {
+      enforceRateLimit(messageLimiter, clientIp, "agent-replies");
       const body = (await readJsonBody(request)) as {
         token?: string;
         text?: string;
@@ -1340,6 +1392,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/messages") {
+      enforceRateLimit(pollLimiter, clientIp, "polling");
       const token = url.searchParams.get("token") ?? "";
       const after = url.searchParams.get("after") ?? "0";
       if (!token || !/^\d+$/.test(after)) {

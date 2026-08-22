@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 type ChatMessage = {
   id: string;
-  sender: "client" | "manager";
+  sender: "client" | "manager" | "system";
   text: string;
   attachments?: ChatAttachment[];
 };
@@ -19,7 +19,7 @@ type PendingPhoto = ChatAttachment & {
   file: File;
 };
 
-type ChatState = "idle" | "connecting" | "online";
+type ChatState = "idle" | "connecting" | "online" | "completed";
 
 const CHAT_SERVER_URL = process.env.NEXT_PUBLIC_CHAT_SERVER_URL ?? "http://localhost:4100";
 
@@ -79,6 +79,8 @@ const CHAT_TEXTS = {
     title: "Менеджер RemTech",
     connecting: "підключення...",
     online: "онлайн",
+    statusCompleted: "заявку оформлено",
+    managerLeft: "Менеджер покинув чат",
     connectionMessage: "З’єднуємо з менеджером RemTech...",
     typingAria: "Менеджер друкує",
     placeholder: "Напишіть повідомлення...",
@@ -110,6 +112,8 @@ const CHAT_TEXTS = {
     title: "Менеджер RemTech",
     connecting: "подключение...",
     online: "онлайн",
+    statusCompleted: "заявка оформлена",
+    managerLeft: "Менеджер покинул чат",
     connectionMessage: "Соединяемся с менеджером RemTech...",
     typingAria: "Менеджер печатает",
     placeholder: "Напишите сообщение...",
@@ -221,6 +225,7 @@ export default function ChatPanel({
         token?: string | null;
         selectedService?: string | null;
         lastHumanMessageId?: string;
+        chatState?: string;
       };
       if (Array.isArray(saved.messages)) {
         setMessages(saved.messages);
@@ -241,6 +246,9 @@ export default function ChatPanel({
       if (typeof saved.selectedService === "string") {
         setSelectedService(saved.selectedService);
       }
+      if (saved.chatState === "completed") {
+        setState("completed");
+      }
     } catch {
       // ignore corrupted storage
     }
@@ -255,12 +263,13 @@ export default function ChatPanel({
           token: tokenRef.current,
           selectedService,
           lastHumanMessageId,
+          chatState: state === "completed" ? "completed" : undefined,
         })
       );
     } catch {
       // storage unavailable
     }
-  }, [messages, selectedService, lastHumanMessageId]);
+  }, [messages, selectedService, lastHumanMessageId, state]);
 
   useEffect(() => {
     if (!chatToken) return;
@@ -341,6 +350,7 @@ export default function ChatPanel({
         const data = (await response.json()) as {
           text?: string;
           waitingForHuman?: boolean;
+          requestCompleted?: boolean;
         };
         if (!response.ok) {
           throw new Error("Manager reply unavailable");
@@ -351,7 +361,11 @@ export default function ChatPanel({
         if (typeof data.text !== "string" || !data.text) {
           throw new Error("Manager reply unavailable");
         }
-        return { kind: "reply" as const, reply: data.text };
+        return {
+          kind: "reply" as const,
+          reply: data.text,
+          requestCompleted: data.requestCompleted === true,
+        };
       })
       .catch((error: unknown) => ({ kind: "error" as const, error }));
 
@@ -368,6 +382,13 @@ export default function ChatPanel({
         ...prev,
         { id: crypto.randomUUID(), sender: "manager", text: result.reply },
       ]);
+      if (result.requestCompleted) {
+        setState("completed");
+        setMessages((prev) => [
+          ...prev,
+          { id: crypto.randomUUID(), sender: "system", text: t.managerLeft },
+        ]);
+      }
     } catch {
       const fallback =
         t.fallback;
@@ -578,7 +599,7 @@ export default function ChatPanel({
   useEffect(() => {
     if (!isOpen) return;
     if (greetingShownRef.current) {
-      setState("online");
+      setState((current) => (current === "completed" ? "completed" : "online"));
       return;
     }
     if (connectionStartedRef.current) return;
@@ -682,7 +703,11 @@ export default function ChatPanel({
             <span className={`manager-status${state === "online" ? " is-online" : ""}`}>
               <i></i>
               <span aria-live="polite">
-                {state === "online" ? t.online : t.connecting}
+                {state === "completed"
+                  ? t.statusCompleted
+                  : state === "online"
+                    ? t.online
+                    : t.connecting}
               </span>
             </span>
           </div>
@@ -701,7 +726,12 @@ export default function ChatPanel({
           {state === "idle" && (
             <p className="connection-message">{t.connectionMessage}</p>
           )}
-          {messages.map((message) => (
+          {messages.map((message) =>
+            message.sender === "system" ? (
+              <p key={message.id} className="connection-message">
+                {message.text}
+              </p>
+            ) : (
             <div
               key={message.id}
               className={`message ${message.sender}${
@@ -725,7 +755,8 @@ export default function ChatPanel({
               )}
               {message.text && <span>{message.text}</span>}
             </div>
-          ))}
+            )
+          )}
           {isTyping && (
             <p className="message manager typing" aria-label={t.typingAria}>
               <span></span><span></span><span></span>
