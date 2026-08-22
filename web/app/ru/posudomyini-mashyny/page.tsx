@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import ChatPanel from "@/components/ChatPanel";
+import { getContacts } from "@/lib/contacts";
+import { phoneHrefFromPhone } from "@/shared/settings";
 
 export const metadata: Metadata = {
   title: "Ремонт посудомоечных машин в Броварах — RemTech",
@@ -23,7 +25,9 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RuPosudomyiniMashynyPage() {
+export default async function RuPosudomyiniMashynyPage() {
+  const contacts = await getContacts();
+  const phoneHref = phoneHrefFromPhone(contacts.phone);
   return (
     <>
       <Header variant="service" lang="ru" altLangHref="/posudomyini-mashyny/" />
@@ -38,7 +42,7 @@ export default function RuPosudomyiniMashynyPage() {
 
             <div className="hero-actions">
               <button className="primary-button" type="button" data-open-chat>Написать менеджеру</button>
-              <a className="secondary-button" href="tel:+380000000000">Позвонить</a>
+              <a className="secondary-button" href={phoneHref}>Позвонить</a>
             </div>
           </div>
         </section>
@@ -114,7 +118,7 @@ export default function RuPosudomyiniMashynyPage() {
           </div>
           <div className="dishwasher-final-actions">
             <button type="button" data-open-chat>Написать менеджеру</button>
-            <a href="tel:+380000000000">Позвонить</a>
+            <a href={phoneHref}>Позвонить</a>
           </div>
         </section>
       </main>

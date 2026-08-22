@@ -4314,6 +4314,182 @@ h1 {
   }
 }
 
+.admin-page {
+  min-height: calc(100svh - var(--header-height, 72px));
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 20px;
+  background: var(--page-bg);
+}
+
+.admin-card {
+  width: min(840px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  padding: 32px;
+}
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.admin-header .brand-mark {
+  width: 34px;
+  height: 34px;
+}
+
+.admin-header h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 820;
+}
+
+.admin-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.admin-form > :last-child {
+  margin-top: 24px;
+}
+
+.admin-fieldset {
+  margin: 0 0 24px;
+  padding: 0 0 12px;
+  border: 0;
+  display: grid;
+  gap: 18px;
+}
+
+.admin-fieldset legend {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 0 6px;
+}
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-field-title {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.admin-field span {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.admin-field input,
+.admin-field textarea {
+  width: 100%;
+  padding: 9px 12px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 140ms ease;
+}
+
+.admin-field input:focus,
+.admin-field textarea:focus {
+  border-color: var(--accent);
+}
+
+.admin-field textarea {
+  font-size: 14px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.admin-two-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.admin-localized {
+  display: grid;
+  gap: 18px;
+}
+
+.admin-localized textarea {
+  font-family: inherit;
+}
+
+.admin-password {
+  margin-top: 12px;
+}
+
+.admin-errors {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  color: var(--accent-strong);
+  font-size: 13px;
+}
+
+.admin-errors li {
+  padding: 4px 0;
+}
+
+.admin-saved {
+  margin: 0 0 8px;
+  color: var(--positive);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-save-button {
+  min-height: 50px;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 20px;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.admin-save-button:hover {
+  background: var(--accent-hover);
+}
+
+.admin-save-button:active {
+  transform: translateY(1px);
+}
+
+.admin-save-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     scroll-behavior: auto !important;

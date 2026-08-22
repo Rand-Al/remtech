@@ -31,9 +31,11 @@ const TEXTS = {
 export default function MobileNav({
   variant = "service",
   lang = "uk",
+  phoneHref = "tel:+380000000000",
 }: {
   variant?: NavVariant;
   lang?: SiteLang;
+  phoneHref?: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
@@ -113,7 +115,7 @@ export default function MobileNav({
         <a href={variant === "home" ? "#contacts" : `${homePath}#contacts`} onClick={close}>
           {t.contacts}
         </a>
-        <a href="tel:+380000000000" onClick={close}>{t.call}</a>
+        <a href={phoneHref} onClick={close}>{t.call}</a>
         <button type="button" data-open-chat onClick={close}>{t.chat}</button>
       </nav>
     </>

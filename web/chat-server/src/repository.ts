@@ -39,6 +39,11 @@ export async function ensureTelegramReplySchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_telegram_cards_state
       ON telegram_cards(state);
+    CREATE TABLE IF NOT EXISTS site_settings (
+      key TEXT PRIMARY KEY,
+      value JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
     INSERT INTO telegram_cards
       (request_id, chat_id, telegram_message_id, state, attempt_count,
        sent_at, last_attempt_at, updated_at)
@@ -763,20 +768,51 @@ export async function updateRequestStatus(
   }
 }
 
+export async function getSiteSetting(
+  key: string
+): Promise<unknown | null> {
+  const result = await pool.query(
+    "SELECT value FROM site_settings WHERE key = $1",
+    [key]
+  );
+  const row = result.rows[0];
+  return row ? (row.value as unknown) : null;
+}
+
+export async function saveSiteSetting(
+  key: string,
+  value: unknown
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO site_settings (key, value, updated_at)
+     VALUES ($1, $2, now())
+     ON CONFLICT (key) DO UPDATE SET
+       value = EXCLUDED.value,
+       updated_at = now()`,
+    [key, JSON.stringify(value)]
+  );
+}
+
+// Запись технического события не должна ломать обработку запроса:
+// сбой логирования выводится в консоль, но не пробрасывается выше.
 export async function logTechnicalEvent(
   eventType: string,
   severity: string,
   message: string,
   metadata?: unknown
 ): Promise<void> {
-  await pool.query(
-    `INSERT INTO technical_events (event_type, severity, message, metadata)
-     VALUES ($1, $2, $3, $4)`,
-    [
-      eventType,
-      severity,
-      message,
-      metadata === undefined ? null : JSON.stringify(metadata),
-    ]
-  );
+  try {
+    await pool.query(
+      `INSERT INTO technical_events (event_type, severity, message, metadata)
+       VALUES ($1, $2, $3, $4)`,
+      [
+        eventType,
+        severity,
+        message,
+        metadata === undefined ? null : JSON.stringify(metadata),
+      ]
+    );
+  } catch (error) {
+    console.error("[technical-events] не удалось записать событие:", error);
+  }
 }

@@ -85,6 +85,13 @@ CREATE TABLE IF NOT EXISTS technical_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Редактируемые настройки сайта (админка): контакты, позже цены и тексты
+CREATE TABLE IF NOT EXISTS site_settings (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Связь сообщений Telegram с заявками для ручного диалога
 CREATE TABLE IF NOT EXISTS telegram_message_links (
   request_id BIGINT NOT NULL REFERENCES requests(id) ON DELETE CASCADE,

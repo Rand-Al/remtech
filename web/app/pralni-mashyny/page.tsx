@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import ChatPanel from "@/components/ChatPanel";
+import { getContacts } from "@/lib/contacts";
+import { phoneHrefFromPhone } from "@/shared/settings";
 
 export const metadata: Metadata = {
   title: "Ремонт пральних машин у Броварах — RemTech",
@@ -23,7 +25,9 @@ export const metadata: Metadata = {
   },
 };
 
-export default function PralniMashynyPage() {
+export default async function PralniMashynyPage() {
+  const contacts = await getContacts();
+  const phoneHref = phoneHrefFromPhone(contacts.phone);
   return (
     <>
       <Header altLangHref="/ru/pralni-mashyny/" />
@@ -38,7 +42,7 @@ export default function PralniMashynyPage() {
 
             <div className="hero-actions">
               <button className="primary-button" type="button" data-open-chat>Написати менеджеру</button>
-              <a className="secondary-button" href="tel:+380000000000">Зателефонувати</a>
+              <a className="secondary-button" href={phoneHref}>Зателефонувати</a>
             </div>
           </div>
         </section>
@@ -114,7 +118,7 @@ export default function PralniMashynyPage() {
           </div>
           <div className="washer-final-actions">
             <button type="button" data-open-chat>Написати менеджеру</button>
-            <a href="tel:+380000000000">Зателефонувати</a>
+            <a href={phoneHref}>Зателефонувати</a>
           </div>
         </section>
       </main>

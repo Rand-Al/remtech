@@ -1,6 +1,8 @@
 import MobileNav from "@/components/MobileNav";
 import LangSwitch from "@/components/LangSwitch";
 import LangRedirect from "@/components/LangRedirect";
+import { getContacts } from "@/lib/contacts";
+import { phoneHrefFromPhone } from "@/shared/settings";
 
 export type NavVariant = "home" | "kotly" | "service";
 export type SiteLang = "uk" | "ru";
@@ -11,18 +13,18 @@ const TEXTS = {
     brand: "RemTech, головна",
     langAria: "Мова сайту",
     chat: "Написати менеджеру",
-    home: { services: "Послуги", directions: "Напрями" },
+    home: { services: "Послуги", directions: "Напрями", contacts: "Контакти" },
   },
   ru: {
     navAria: "Главная навигация",
     brand: "RemTech, главная",
     langAria: "Язык сайта",
     chat: "Написать менеджеру",
-    home: { services: "Услуги", directions: "Направления" },
+    home: { services: "Услуги", directions: "Направления", contacts: "Контакты" },
   },
 } as const;
 
-export default function Header({
+export default async function Header({
   variant = "service",
   lang = "uk",
   altLangHref,
@@ -35,6 +37,8 @@ export default function Header({
   const homePath = lang === "ru" ? "/ru/" : "/";
   const faqHref = variant === "home" ? "#faq" : `${homePath}#faq`;
   const contactsHref = variant === "home" ? "#contacts" : `${homePath}#contacts`;
+  const contacts = await getContacts();
+  const phoneHref = phoneHrefFromPhone(contacts.phone);
 
   return (
     <header className="site-header">
@@ -49,7 +53,7 @@ export default function Header({
           <>
             <a href="#services">{t.home.services}</a>
             <a href="#faq">FAQ</a>
-            <a href="#contacts">Контакти</a>
+            <a href="#contacts">{t.home.contacts}</a>
           </>
         )}
         {variant === "kotly" && (
@@ -77,9 +81,9 @@ export default function Header({
           className="language-switch"
           ariaLabel={t.langAria}
         />
-        <a className="phone-link" href="tel:+380000000000">+38 000 000 00 00</a>
+        <a className="phone-link" href={phoneHref}>{contacts.phone}</a>
         <button className="header-chat-button" type="button" data-open-chat>{t.chat}</button>
-        <MobileNav variant={variant} lang={lang} />
+        <MobileNav variant={variant} lang={lang} phoneHref={phoneHref} />
       </div>
     </header>
   );

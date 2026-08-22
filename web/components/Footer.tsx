@@ -1,12 +1,12 @@
 import type { NavVariant, SiteLang } from "@/components/Header";
 import LangSwitch from "@/components/LangSwitch";
+import { getContacts } from "@/lib/contacts";
+import { phoneHrefFromPhone } from "@/shared/settings";
 
 const TEXTS = {
   uk: {
     about: "Ремонт та обслуговування побутової техніки у Броварах і Броварському районі.",
     contactHeading: "Зв’язок",
-    schedule: "Щодня, 10:00–18:00",
-    area: "Бровари та Броварський район",
     navAria: "Навігація у підвалі",
     navHeading: "Навігація",
     policy: "Політика конфіденційності",
@@ -21,8 +21,6 @@ const TEXTS = {
   ru: {
     about: "Ремонт и обслуживание бытовой техники в Броварах и Броварском районе.",
     contactHeading: "Связь",
-    schedule: "Ежедневно, 10:00–18:00",
-    area: "Бровары и Броварский район",
     navAria: "Навигация в подвале",
     navHeading: "Навигация",
     policy: "Политика конфиденциальности",
@@ -36,7 +34,7 @@ const TEXTS = {
   },
 } as const;
 
-export default function Footer({
+export default async function Footer({
   variant = "service",
   lang = "uk",
   altLangHref,
@@ -48,6 +46,7 @@ export default function Footer({
   const t = TEXTS[lang];
   const homePath = lang === "ru" ? "/ru/" : "/";
   const policyHref = lang === "ru" ? "/ru/privacy/" : "/privacy/";
+  const contacts = await getContacts();
 
   return (
     <footer className="site-footer service-page-footer">
@@ -60,10 +59,10 @@ export default function Footer({
       </div>
       <div className="footer-contact">
         <p className="footer-heading">{t.contactHeading}</p>
-        <a href="tel:+380000000000">+38 000 000 00 00</a>
-        <a href="https://t.me/example">Telegram</a>
-        <span>{t.schedule}</span>
-        <span>{t.area}</span>
+        <a href={phoneHrefFromPhone(contacts.phone)}>{contacts.phone}</a>
+        <a href={contacts.telegramUrl}>Telegram</a>
+        <span>{lang === "ru" ? contacts.schedule.ru : contacts.schedule.uk}</span>
+        <span>{lang === "ru" ? contacts.area.ru : contacts.area.uk}</span>
       </div>
       <nav className="footer-nav" aria-label={t.navAria}>
         <span className="footer-heading">{t.navHeading}</span>

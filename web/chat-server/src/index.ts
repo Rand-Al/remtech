@@ -2,6 +2,9 @@ import { createServer } from "node:http";
 import { basename } from "node:path";
 import { loadLocalEnv } from "./env.js";
 import { createRateLimiter, type RateLimiter } from "./rateLimiter.js";
+import { validateContacts } from "./settings.js";
+import { contactsWithDefaults, type SiteContacts } from "../../shared/settings.js";
+import { timingSafeEqual } from "node:crypto";
 import { createLlmAdapter, createTelegramAdapter } from "./adapters.js";
 import {
   createRequest,
@@ -29,6 +32,8 @@ import {
   saveTelegramCard,
   getUnsentAttachments,
   markAttachmentSent,
+  getSiteSetting,
+  saveSiteSetting,
   logTechnicalEvent,
   saveTelegramManagerReply,
   saveTelegramMessageLink,
@@ -118,8 +123,11 @@ function getClientIp(request: import("node:http").IncomingMessage): string {
 }
 
 // Финальная реплика автоматического менеджера об оформлении заявки:
-// по ней клиентский чат понимает, что диалог завершён
-const REQUEST_COMPLETED_PATTERN = /(заявк[ауи]?\s+оформ|звернення\s+оформ)/i;
+// по ней клиентский чат понимает, что диалог завершён.
+// Совпадение только с формой результата («оформлено/оформлена»),
+// чтобы инструкция «чтобы заявку оформить…» не завершала диалог раньше времени.
+const REQUEST_COMPLETED_PATTERN =
+  /(?:заявк[ау]\s+(?:оформлено|оформлена)|звернення\s+оформлено)/i;
 
 function enforceRateLimit(
   limiter: RateLimiter,
@@ -134,6 +142,70 @@ function enforceRateLimit(
     { ip: key, kind }
   );
   throw new HttpError(429, "Занадто багато запитів. Спробуйте за кілька хвилин.");
+}
+
+const adminLimiter = createRateLimiter(10, RATE_WINDOW_MS);
+const loginLimiter = createRateLimiter(10, 60 * 1000);
+
+function checkAdminPassword(candidate: unknown): boolean {
+  const expected = process.env.RT_ADMIN_PASSWORD ?? "";
+  if (!expected) return false;
+  if (typeof candidate !== "string" || !candidate) return false;
+  const a = Buffer.from(candidate);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+async function handleLogin(
+  body: { password?: unknown },
+  clientIp: string
+): Promise<{ ok: boolean; error?: string }> {
+  enforceRateLimit(loginLimiter, clientIp, "login");
+  if (!process.env.RT_ADMIN_PASSWORD) {
+    return { ok: false, error: "Административный пароль не задан на сервере" };
+  }
+  if (checkAdminPassword(body.password)) {
+    return { ok: true };
+  }
+  void logTechnicalEvent("admin_auth_failed", "warning", "Неверный пароль админки", {
+    ip: clientIp,
+  });
+  return { ok: false, error: "Неверный пароль" };
+}
+
+async function handleGetSettings(): Promise<unknown> {
+  const stored = await getSiteSetting("contacts");
+  const contacts = contactsWithDefaults(stored as Partial<SiteContacts> | null);
+  return { contacts };
+}
+
+async function handleSaveSettings(
+  body: { password?: unknown; key?: unknown; value?: unknown },
+  clientIp: string
+): Promise<unknown> {
+  enforceRateLimit(adminLimiter, clientIp, "admin");
+  if (!process.env.RT_ADMIN_PASSWORD) {
+    throw new HttpError(503, "Административный пароль не задан на сервере");
+  }
+  if (!checkAdminPassword(body.password)) {
+    void logTechnicalEvent("admin_auth_failed", "warning", "Неверный пароль админки", {
+      ip: clientIp,
+    });
+    throw new HttpError(401, "Неверный пароль");
+  }
+  if (body.key !== "contacts") {
+    throw new HttpError(400, "Неизвестный раздел настроек");
+  }
+  const validation = validateContacts(body.value);
+  if (!validation.ok) {
+    return { errors: validation.errors };
+  }
+  await saveSiteSetting("contacts", validation.value);
+  await logTechnicalEvent("settings_updated", "info", "Обновлены контакты сайта", {
+    key: "contacts",
+  });
+  return { ok: true, contacts: validation.value };
 }
 
 const SYSTEM_PROMPT = [
@@ -375,6 +447,7 @@ async function handleSendMessage(
     service?: string;
     text?: string;
     greeting?: string;
+    lang?: unknown;
   },
   clientIp: string
 ): Promise<unknown> {
@@ -387,6 +460,10 @@ async function handleSendMessage(
   }
 
   const token = typeof body.token === "string" ? body.token : "";
+  // Язык страницы приходит из клиентского чата и нужен как стартовый,
+  // когда первое сообщение нейтральное (телефон, код ошибки, фото).
+  const pageLang =
+    body.lang === "ru" || body.lang === "uk" ? body.lang : null;
 
   if (!token) {
     enforceRateLimit(newRequestLimiter, clientIp, "new-requests");
@@ -401,7 +478,7 @@ async function handleSendMessage(
       location: location ?? undefined,
       name: contact.name,
       phone: contact.phone,
-      lang: detectMessageLanguage(text) ?? "uk",
+      lang: detectMessageLanguage(text) ?? pageLang ?? "uk",
       termsAccepted: explicitlyAcceptsTerms(text),
     };
     const request = await createRequest(fields);
@@ -505,9 +582,11 @@ async function handleAgentReply(body: {
     return { error: "Заявку не знайдено" };
   }
 
-  const history = await getMessages(request.id, LLM_HISTORY_LIMIT);
-  const language = detectConversationLanguage(history);
   const details = await getRequestDetails(token);
+  const history = await getMessages(request.id, LLM_HISTORY_LIMIT);
+  const conversationLanguage: ChatLanguage =
+    details?.lang === "ru" || details?.lang === "uk" ? details.lang : "uk";
+  const language = detectConversationLanguage(history, conversationLanguage);
   const activeService = normalizeService(details?.service ?? service);
   const termsDecision = getTermsDecision(history);
   const locationAnswered = Boolean(details?.location) || hasLocationAnswer(history);
@@ -1341,7 +1420,7 @@ const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
   response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
   response.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (request.method === "OPTIONS") {
@@ -1400,6 +1479,35 @@ const server = createServer(async (request, response) => {
       }
       const messages = await getManagerMessagesAfterToken(token, after);
       sendJson(response, 200, { messages });
+      return;
+    }
+
+     if (request.method === "GET" && (url.pathname === "/api/settings" || url.pathname === "/api/settings/")) {
+       const result = await handleGetSettings();
+       response.setHeader("Cache-Control", "no-store");
+       sendJson(response, 200, result);
+       return;
+     }
+
+     if (request.method === "POST" && (url.pathname === "/api/admin/login" || url.pathname === "/api/admin/login/")) {
+       const body = (await readJsonBody(request)) as { password?: unknown };
+       const result = await handleLogin(body, clientIp);
+       sendJson(response, result.ok ? 200 : 401, result);
+       return;
+     }
+
+    if (request.method === "PUT" && (url.pathname === "/api/admin/settings" || url.pathname === "/api/admin/settings/")) {
+      const body = (await readJsonBody(request)) as {
+        password?: unknown;
+        key?: unknown;
+        value?: unknown;
+      };
+      const result = await handleSaveSettings(body, clientIp);
+      sendJson(
+        response,
+        result && typeof result === "object" && "errors" in result ? 400 : 200,
+        result
+      );
       return;
     }
 

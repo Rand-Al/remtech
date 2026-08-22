@@ -3,6 +3,8 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import ChatPanel from "@/components/ChatPanel";
 import PricingSection from "@/components/PricingSection";
+import { getContacts } from "@/lib/contacts";
+import { phoneHrefFromPhone } from "@/shared/settings";
 
 export const metadata: Metadata = {
   title: "Ремонт и обслуживание котлов в Броварах — RemTech",
@@ -24,7 +26,9 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RuKotlyPage() {
+export default async function RuKotlyPage() {
+  const contacts = await getContacts();
+  const phoneHref = phoneHrefFromPhone(contacts.phone);
   return (
     <>
       <Header variant="kotly" lang="ru" altLangHref="/kotly/" />
@@ -39,7 +43,7 @@ export default function RuKotlyPage() {
 
             <div className="hero-actions">
               <button className="primary-button" type="button" data-open-chat>Написать менеджеру</button>
-              <a className="secondary-button" href="tel:+380000000000">Позвонить</a>
+              <a className="secondary-button" href={phoneHref}>Позвонить</a>
             </div>
           </div>
         </section>
@@ -205,7 +209,7 @@ export default function RuKotlyPage() {
           </div>
           <div className="boiler-final-actions">
             <button type="button" data-open-chat>Написать менеджеру</button>
-            <a href="tel:+380000000000">Позвонить</a>
+            <a href={phoneHref}>Позвонить</a>
           </div>
         </section>
       </main>

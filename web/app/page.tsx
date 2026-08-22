@@ -3,6 +3,8 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import ChatPanel from "@/components/ChatPanel";
 import Faq from "@/components/Faq";
+import { getContacts } from "@/lib/contacts";
+import { phoneHrefFromPhone } from "@/shared/settings";
 
 export const metadata: Metadata = {
   title: "Ремонт побутової техніки у Броварах — RemTech",
@@ -24,7 +26,9 @@ export const metadata: Metadata = {
   },
 };
 
-export default function HomePage() {
+export default async function HomePage() {
+  const contacts = await getContacts();
+  const phoneHref = phoneHrefFromPhone(contacts.phone);
   return (
     <>
       <Header variant="home" altLangHref="/ru/" />
@@ -39,8 +43,8 @@ export default function HomePage() {
 
             <div className="hero-actions">
               <button className="primary-button" type="button" data-open-chat>Написати менеджеру</button>
-              <a className="secondary-button" href="tel:+380000000000">Зателефонувати</a>
-              <a className="text-button telegram-button" href="https://t.me/example" rel="nofollow">Telegram <span aria-hidden="true">&#8599;</span></a>
+              <a className="secondary-button" href={phoneHref}>Зателефонувати</a>
+              <a className="text-button telegram-button" href={contacts.telegramUrl} rel="nofollow">Telegram <span aria-hidden="true">&#8599;</span></a>
             </div>
 
             <ul className="benefits" aria-label="Коротко про сервіс">
@@ -120,26 +124,26 @@ export default function HomePage() {
             <p>Опишіть несправність у чаті або зателефонуйте. Менеджер уточнить деталі та погодить зручний час для зв’язку.</p>
             <div className="contact-actions">
               <button className="contact-primary" type="button" data-open-chat>Написати менеджеру</button>
-              <a className="contact-secondary" href="tel:+380000000000">Зателефонувати</a>
+              <a className="contact-secondary" href={phoneHref}>Зателефонувати</a>
             </div>
           </div>
 
           <dl className="contact-details">
             <div>
               <dt>Телефон</dt>
-              <dd><a href="tel:+380000000000">+38 000 000 00 00</a></dd>
+              <dd><a href={phoneHref}>{contacts.phone}</a></dd>
             </div>
             <div>
               <dt>Telegram</dt>
-              <dd><a href="https://t.me/example" rel="nofollow">@example</a></dd>
+              <dd><a href={contacts.telegramUrl} rel="nofollow">{contacts.telegramLabel}</a></dd>
             </div>
             <div>
               <dt>Графік роботи</dt>
-              <dd>Щодня, 10:00–18:00</dd>
+              <dd>{contacts.schedule.uk}</dd>
             </div>
             <div>
               <dt>Зона виїзду</dt>
-              <dd>Бровари та Броварський район</dd>
+              <dd>{contacts.area.uk}</dd>
             </div>
           </dl>
         </section>
