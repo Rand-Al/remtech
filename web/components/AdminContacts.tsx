@@ -40,10 +40,15 @@ function payloadFromForm(form: FormState) {
   };
 }
 
-export default function AdminContacts() {
+export default function AdminContacts({
+  password,
+  onAuthError,
+}: {
+  password: string;
+  onAuthError: () => void;
+}) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [loaded, setLoaded] = useState(false);
-  const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -80,10 +85,6 @@ export default function AdminContacts() {
     async (event: React.FormEvent) => {
       event.preventDefault();
       if (saving) return;
-      if (!password) {
-        setErrors(["Введите пароль администратора"]);
-        return;
-      }
       setSaving(true);
       setErrors([]);
       try {
@@ -103,7 +104,10 @@ export default function AdminContacts() {
         };
         if (response.ok && data.ok) {
           setSavedAt(new Date().toLocaleTimeString("ru-RU"));
-          setPassword("");
+          return;
+        }
+        if (response.status === 401 || response.status === 403) {
+          onAuthError();
           return;
         }
         if (Array.isArray(data.errors) && data.errors.length > 0) {
@@ -117,7 +121,7 @@ export default function AdminContacts() {
         setSaving(false);
       }
     },
-    [form, password, saving]
+    [form, password, saving, onAuthError]
   );
 
   return (
@@ -192,16 +196,6 @@ export default function AdminContacts() {
         </div>
       </fieldset>
 
-      <label className="admin-field admin-password">
-        <span>Пароль администратора</span>
-        <input
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          autoComplete="off"
-        />
-      </label>
-
       {errors.length > 0 && (
         <ul className="admin-errors" role="alert">
           {errors.map((error) => (
@@ -216,11 +210,11 @@ export default function AdminContacts() {
       )}
 
       <button
-        className="admin-save-button"
+        className="primary-button admin-save-button"
         type="submit"
         disabled={saving || !loaded}
       >
-        {saving ? "Сохранение..." : "Сохранить"}
+        {saving ? "Сохранение..." : "Сохранить контакты"}
       </button>
     </form>
   );
