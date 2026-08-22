@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS attachments (
   file_path TEXT NOT NULL,
   mime_type TEXT,
   size_bytes BIGINT,
+  telegram_chat_id TEXT,
+  telegram_message_id BIGINT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

@@ -28,6 +28,12 @@ export interface TelegramManagerReply extends TelegramMessageReference {
   managerName: string;
 }
 
+export interface TelegramPhoto {
+  data: Buffer;
+  mimeType: string;
+  fileName: string;
+}
+
 export interface TelegramAdapter {
   readonly name: string;
   sendRequest(request: TelegramRequest): Promise<TelegramMessageReference | null>;
@@ -41,6 +47,11 @@ export interface TelegramAdapter {
     text: string,
     target: TelegramMessageReference
   ): Promise<TelegramMessageReference | null>;
+  sendClientPhotos(
+    requestNumber: string,
+    photos: TelegramPhoto[],
+    target: TelegramMessageReference
+  ): Promise<Array<TelegramMessageReference | null>>;
   sendManagerNotice(
     text: string,
     target: TelegramMessageReference

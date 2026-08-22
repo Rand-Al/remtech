@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { basename } from "node:path";
 import { loadLocalEnv } from "./env.js";
 import { createLlmAdapter, createTelegramAdapter } from "./adapters.js";
 import {
@@ -25,6 +26,8 @@ import {
   markTelegramCardFinal,
   recordTelegramCardError,
   saveTelegramCard,
+  getUnsentAttachments,
+  markAttachmentSent,
   logTechnicalEvent,
   saveTelegramManagerReply,
   saveTelegramMessageLink,
@@ -52,6 +55,7 @@ import {
   extractDeviceDetailsAnswer,
   extractExplicitLocation,
   extractInitialSymptom,
+  extractBrandFromText,
   getLocationAnswer,
   getTermsDecision,
   hasInvalidPhoneCandidate,
@@ -61,6 +65,7 @@ import {
   isSymptomAnswerExpected,
   mergeRequestSymptom,
   normalizeManagerReply,
+  normalizeService,
   requestsHumanManager,
   requestsTechnicianVisit,
   shouldAskExactAddress,
@@ -341,12 +346,13 @@ async function handleSendMessage(
 
   if (!token) {
     const detectedService = detectServiceFromText(text);
+    const service = detectedService ?? normalizeService(body.service);
     const contact = extractContactAnswer(text, "");
     const location = extractExplicitLocation(text);
     const fields: RequestFields = {
-      service: detectedService ?? (typeof body.service === "string" ? body.service : "other"),
+      service,
       symptom: extractInitialSymptom(text),
-      deviceType: detectedService ?? (typeof body.service === "string" ? body.service : "other"),
+      deviceType: service,
       location: location ?? undefined,
       name: contact.name,
       phone: contact.phone,
@@ -357,6 +363,14 @@ async function handleSendMessage(
     const greeting = typeof body.greeting === "string" ? body.greeting.trim() : "";
     if (greeting && greeting.length <= MAX_MESSAGE_LENGTH) {
       await saveMessage(request.id, "manager", greeting);
+    }
+    const brandInfo = extractBrandFromText(text);
+    if (brandInfo) {
+      await updateRequestDeviceDetails(
+        request.id,
+        service,
+        [brandInfo.brand, brandInfo.model].filter(Boolean).join(" ")
+      );
     }
     const saved = await saveMessage(request.id, "client", text);
     return { token: request.token, messageId: saved.id };
@@ -407,7 +421,19 @@ async function handleSendMessage(
   }
 
   if (details?.status === "waiting_for_manager") {
-    await relayClientMessageToTelegram(request.id, details.number, text);
+    const relayed = await relayClientMessageToTelegram(
+      request.id,
+      details.number,
+      text
+    );
+    if (relayed) {
+      await sendUnsentAttachmentsToTelegram(
+        request.id,
+        details.number,
+        relayed,
+        saved.id
+      );
+    }
   }
 
   return { messageId: saved.id };
@@ -437,7 +463,7 @@ async function handleAgentReply(body: {
   const history = await getMessages(request.id, LLM_HISTORY_LIMIT);
   const language = detectConversationLanguage(history);
   const details = await getRequestDetails(token);
-  const activeService = details?.service || service;
+  const activeService = normalizeService(details?.service ?? service);
   const termsDecision = getTermsDecision(history);
   const locationAnswered = Boolean(details?.location) || hasLocationAnswer(history);
   const exactAddressProvided = history.some(
@@ -641,7 +667,7 @@ async function maybeNotifyTelegram(token: string, force = false): Promise<void> 
   const telegramRequest = {
     number: details.number,
     createdAt: details.createdAt,
-    service: details.service,
+    service: normalizeService(details.service),
     device: details.service,
     deviceDetails: details.deviceDetails ?? "",
     symptom: details.symptom ?? "",
@@ -668,6 +694,11 @@ async function maybeNotifyTelegram(token: string, force = false): Promise<void> 
       );
       await markTelegramCardFinal(details.id);
       await markRequestTelegramNotified(details.id, true);
+      await sendUnsentAttachmentsToTelegram(
+        details.id,
+        details.number,
+        { chatId: card.chatId, messageId: card.messageId, threadId: card.threadId ?? undefined }
+      );
       return;
     } catch (error) {
       await recordTelegramCardError(details.id, String(error));
@@ -711,6 +742,7 @@ async function maybeNotifyTelegram(token: string, force = false): Promise<void> 
           );
         }
       }
+      await sendUnsentAttachmentsToTelegram(details.id, details.number, sent);
     }
     await markRequestTelegramNotified(details.id, !force && isComplete);
   } catch (error) {
@@ -729,7 +761,7 @@ async function relayClientMessageToTelegram(
   requestId: string,
   requestNumber: string,
   text: string
-): Promise<void> {
+): Promise<import("./telegram/adapter.js").TelegramMessageReference | null> {
   try {
     const anchor = await getLatestTelegramMessageLink(requestId);
     if (!anchor) {
@@ -739,7 +771,7 @@ async function relayClientMessageToTelegram(
         "Не найдена карточка Telegram для сообщения клиента",
         { requestNumber }
       );
-      return;
+      return null;
     }
 
     const sent = await telegram.sendClientMessage(
@@ -755,6 +787,7 @@ async function relayClientMessageToTelegram(
         "client"
       );
     }
+    return sent ?? null;
   } catch (error) {
     await logTechnicalEvent(
       "telegram_client_relay_failed",
@@ -762,6 +795,89 @@ async function relayClientMessageToTelegram(
       "Не удалось передать сообщение клиента в Telegram",
       { requestNumber, error: String(error) }
     );
+    return null;
+  }
+}
+
+async function sendUnsentAttachmentsToTelegram(
+  requestId: string,
+  requestNumber: string,
+  target: import("./telegram/adapter.js").TelegramMessageReference,
+  messageId?: string
+): Promise<void> {
+  const attachments = await getUnsentAttachments(requestId, messageId);
+  if (!attachments.length) return;
+
+  const photos: Array<{
+    attachmentId: string;
+    data: Buffer;
+    mimeType: string;
+    fileName: string;
+  }> = [];
+  for (const attachment of attachments) {
+    try {
+      const data = await attachmentStorage.read(attachment.filePath);
+      photos.push({
+        attachmentId: attachment.id,
+        data,
+        mimeType: attachment.mimeType,
+        fileName: basename(attachment.filePath),
+      });
+    } catch (error) {
+      await logTechnicalEvent(
+        "telegram_photo_read_failed",
+        "warning",
+        "Не удалось прочитать фото клиента для отправки в Telegram",
+        { requestNumber, filePath: attachment.filePath, error: String(error) }
+      );
+    }
+  }
+  if (!photos.length) return;
+
+  let references: Array<import("./telegram/adapter.js").TelegramMessageReference | null>;
+  try {
+    references = await telegram.sendClientPhotos(
+      requestNumber,
+      photos.map((photo) => ({
+        data: photo.data,
+        mimeType: photo.mimeType,
+        fileName: photo.fileName,
+      })),
+      target
+    );
+  } catch (error) {
+    await logTechnicalEvent(
+      "telegram_photo_send_failed",
+      "error",
+      "Не удалось отправить фото клиента в Telegram",
+      { requestNumber, error: String(error) }
+    );
+    return;
+  }
+
+  for (const [index, photo] of photos.entries()) {
+    const reference = references[index];
+    if (!reference) continue;
+    try {
+      await markAttachmentSent(
+        photo.attachmentId,
+        reference.chatId,
+        reference.messageId
+      );
+      await saveTelegramMessageLink(
+        requestId,
+        reference.chatId,
+        reference.messageId,
+        "client"
+      );
+    } catch (error) {
+      await logTechnicalEvent(
+        "telegram_photo_link_failed",
+        "warning",
+        "Не удалось записать факт отправки фото клиента",
+        { requestNumber, error: String(error) }
+      );
+    }
   }
 }
 

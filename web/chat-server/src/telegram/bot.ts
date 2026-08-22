@@ -2,6 +2,7 @@ import type {
   TelegramAdapter,
   TelegramManagerReply,
   TelegramMessageReference,
+  TelegramPhoto,
   TelegramRequest,
 } from "./adapter.js";
 
@@ -69,6 +70,8 @@ const EQUIPMENT_TOPIC_LABELS: Record<string, string> = {
   other: "Другая техника",
 };
 
+const PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
 function valueOrDash(value: string, maxLength = 900): string {
   const trimmed = value.trim();
   const source = trimmed || "не указано";
@@ -90,7 +93,10 @@ function escapeTelegramHtml(value: string): string {
 }
 
 export function formatTelegramRequest(request: TelegramRequest): string {
-  const service = valueOrDash(SERVICE_LABELS[request.service] ?? request.service, 220);
+  const service = valueOrDash(
+    SERVICE_LABELS[request.service] ?? "Другая бытовая техника",
+    220
+  );
   const status = request.managerRequested
     ? "Требуется подключение менеджера"
     : "Готова к обработке";
@@ -294,6 +300,91 @@ export class TelegramBotAdapter implements TelegramAdapter {
       undefined,
       target.chatId
     );
+  }
+
+  async sendClientPhotos(
+    requestNumber: string,
+    photos: TelegramPhoto[],
+    target: TelegramMessageReference
+  ): Promise<Array<TelegramMessageReference | null>> {
+    const references: Array<TelegramMessageReference | null> = [];
+    for (const [index, photo] of photos.entries()) {
+      try {
+        const reference = await this.sendFile(
+          requestNumber,
+          photo,
+          index === 0,
+          target
+        );
+        references.push(reference);
+      } catch (error) {
+        console.error(
+          `Не удалось отправить фото клиента в Telegram (заявка ${requestNumber}): ${String(error)}`
+        );
+        references.push(null);
+      }
+    }
+    return references;
+  }
+
+  private async sendFile(
+    requestNumber: string,
+    photo: TelegramPhoto,
+    withCaption: boolean,
+    target: TelegramMessageReference
+  ): Promise<TelegramMessageReference> {
+    // JPEG, PNG и WebP отправляются как фото, HEIC/HEIF Telegram не принимает
+    // через sendPhoto — такие файлы уходят документами
+    const asPhoto = PHOTO_MIME_TYPES.has(photo.mimeType);
+    const method = asPhoto ? "sendPhoto" : "sendDocument";
+
+    const form = new FormData();
+    form.append("chat_id", target.chatId);
+    if (target.threadId) form.append("message_thread_id", String(target.threadId));
+    if (target.messageId) {
+      form.append("reply_parameters", JSON.stringify({ message_id: target.messageId }));
+    }
+    form.append("disable_notification", "true");
+    if (withCaption) {
+      form.append("caption", `Фото клиента к заявке ${requestNumber}`);
+    }
+    form.append(
+      asPhoto ? "photo" : "document",
+      new Blob([new Uint8Array(photo.data)], { type: photo.mimeType }),
+      photo.fileName
+    );
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const response = await this.fetchImpl(
+        `https://api.telegram.org/bot${this.token}/${method}`,
+        { method: "POST", body: form, signal: controller.signal }
+      );
+      const result = (await response.json().catch(() => ({}))) as TelegramApiResponse;
+      if (!response.ok || result.ok !== true) {
+        throw new Error(
+          `Telegram API ${response.status}: ${result.description ?? "неизвестная ошибка"}`
+        );
+      }
+      const messageId = result.result?.message_id;
+      const chatId = result.result?.chat?.id;
+      if (!messageId || chatId === undefined) {
+        throw new Error("Telegram API не вернул идентификатор сообщения");
+      }
+      return {
+        chatId: String(chatId),
+        messageId,
+        threadId: result.result?.message_thread_id ?? target.threadId,
+      };
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(`Таймаут Telegram API через ${this.timeoutMs} мс`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async sendManagerNotice(

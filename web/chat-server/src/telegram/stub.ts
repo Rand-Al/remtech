@@ -1,6 +1,8 @@
 import type {
   TelegramAdapter,
   TelegramManagerReply,
+  TelegramMessageReference,
+  TelegramPhoto,
   TelegramRequest,
 } from "./adapter.js";
 
@@ -28,10 +30,21 @@ export class StubTelegramAdapter implements TelegramAdapter {
   async sendClientMessage(
     requestNumber: string,
     text: string,
-    _target: import("./adapter.js").TelegramMessageReference
+    _target: TelegramMessageReference
   ): Promise<null> {
     console.log(`[telegram:stub] Сообщение клиента по заявке ${requestNumber}:`, text);
     return null;
+  }
+
+  async sendClientPhotos(
+    requestNumber: string,
+    photos: TelegramPhoto[],
+    _target: TelegramMessageReference
+  ): Promise<Array<TelegramMessageReference | null>> {
+    console.log(
+      `[telegram:stub] Фото клиента по заявке ${requestNumber}: ${photos.length} шт. (Telegram ещё не подключён)`
+    );
+    return photos.map(() => null);
   }
 
   async sendManagerNotice(

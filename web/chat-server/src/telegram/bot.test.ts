@@ -296,6 +296,87 @@ test("ignores unrelated Telegram commands", () => {
   assert.equal(command, null);
 });
 
+test("sends client photos into the request topic as photos and documents", async () => {
+  const calls: Array<{ url: string; body: FormData }> = [];
+  const adapter = new TelegramBotAdapter({
+    token: "test-token",
+    chatId: "-100123",
+    fetchImpl: async (url, init) => {
+      calls.push({ url, body: init?.body as FormData });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          result: {
+            message_id: 300 + calls.length,
+            message_thread_id: 77,
+            chat: { id: -100123 },
+          },
+        }),
+        { status: 200 }
+      );
+    },
+  });
+
+  const references = await adapter.sendClientPhotos(
+    request.number,
+    [
+      { data: Buffer.from("jpeg-bytes"), mimeType: "image/jpeg", fileName: "a.jpg" },
+      { data: Buffer.from("heic-bytes"), mimeType: "image/heic", fileName: "b.heic" },
+      { data: Buffer.from("png-bytes"), mimeType: "image/png", fileName: "c.png" },
+    ],
+    { chatId: "-100123", messageId: 201, threadId: 77 }
+  );
+
+  assert.equal(calls.length, 3);
+  assert.match(calls[0].url, /sendPhoto$/);
+  assert.match(calls[1].url, /sendDocument$/);
+  assert.match(calls[2].url, /sendPhoto$/);
+  assert.equal(calls[0].body.get("chat_id"), "-100123");
+  assert.equal(calls[0].body.get("message_thread_id"), "77");
+  assert.equal(calls[0].body.get("reply_parameters"), '{"message_id":201}');
+  assert.equal(calls[0].body.get("disable_notification"), "true");
+  assert.equal(calls[0].body.get("caption"), `Фото клиента к заявке ${request.number}`);
+  assert.equal(calls[1].body.get("caption"), null);
+  const firstPhoto = calls[0].body.get("photo");
+  assert.ok(firstPhoto instanceof File);
+  assert.equal(firstPhoto.name, "a.jpg");
+  assert.equal(references.length, 3);
+  assert.equal(references[0]?.messageId, 301);
+  assert.equal(references[1]?.messageId, 302);
+});
+
+test("returns null for a photo that Telegram rejected", async () => {
+  let callIndex = 0;
+  const adapter = new TelegramBotAdapter({
+    token: "test-token",
+    chatId: "-100123",
+    fetchImpl: async (url) => {
+      callIndex += 1;
+      const ok = callIndex === 1;
+      return new Response(
+        JSON.stringify(
+          ok
+            ? { ok: true, result: { message_id: 401, message_thread_id: 77, chat: { id: -100123 } } }
+            : { ok: false, description: "PHOTO_INVALID_DIMENSIONS" }
+        ),
+        { status: ok ? 200 : 400 }
+      );
+    },
+  });
+
+  const references = await adapter.sendClientPhotos(
+    request.number,
+    [
+      { data: Buffer.from("good"), mimeType: "image/jpeg", fileName: "a.jpg" },
+      { data: Buffer.from("bad"), mimeType: "image/jpeg", fileName: "b.jpg" },
+    ],
+    { chatId: "-100123", messageId: 201, threadId: 77 }
+  );
+
+  assert.equal(references[0]?.messageId, 401);
+  assert.equal(references[1], null);
+});
+
 test("does not expose the bot token in Telegram API errors", async () => {
   const adapter = new TelegramBotAdapter({
     token: "secret-token",

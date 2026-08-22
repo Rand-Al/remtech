@@ -11,6 +11,9 @@ export async function ensureTelegramReplySchema(): Promise<void> {
       ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'automation';
     ALTER TABLE requests
       ADD COLUMN IF NOT EXISTS telegram_card_finalized BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE attachments
+      ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT,
+      ADD COLUMN IF NOT EXISTS telegram_message_id BIGINT;
     CREATE TABLE IF NOT EXISTS telegram_message_links (
       request_id BIGINT NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
       chat_id TEXT NOT NULL,
@@ -649,6 +652,39 @@ export async function getAttachmentByToken(
     mimeType: (row.mime_type as string | null) ?? "application/octet-stream",
     sizeBytes: Number(row.size_bytes),
   };
+}
+
+export async function getUnsentAttachments(
+  requestId: string,
+  messageId?: string
+): Promise<Array<{ id: string; filePath: string; mimeType: string }>> {
+  const result = await pool.query(
+    `SELECT id, file_path, mime_type
+       FROM attachments
+      WHERE request_id = $1
+        AND telegram_message_id IS NULL
+        AND ($2::bigint IS NULL OR message_id = $2::bigint)
+      ORDER BY id`,
+    [requestId, messageId ?? null]
+  );
+  return result.rows.map((row) => ({
+    id: String(row.id),
+    filePath: row.file_path as string,
+    mimeType: (row.mime_type as string | null) ?? "application/octet-stream",
+  }));
+}
+
+export async function markAttachmentSent(
+  attachmentId: string,
+  chatId: string,
+  telegramMessageId: number
+): Promise<void> {
+  await pool.query(
+    `UPDATE attachments
+        SET telegram_chat_id = $2, telegram_message_id = $3
+      WHERE id = $1 AND telegram_message_id IS NULL`,
+    [attachmentId, chatId, telegramMessageId]
+  );
 }
 
 export async function getMessages(

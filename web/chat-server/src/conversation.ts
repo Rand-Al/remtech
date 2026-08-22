@@ -66,6 +66,52 @@ export function detectServiceFromText(text: string): DetectedService | null {
   return "boiler-repair";
 }
 
+const SERVICE_SLUGS: Record<string, DetectedService | "other"> = {
+  "boiler-repair": "boiler-repair",
+  "boiler-cleaning": "boiler-cleaning",
+  "boiler-installation": "boiler-installation",
+  washer: "washer",
+  dishwasher: "dishwasher",
+  other: "other",
+  kotly: "boiler-repair",
+  "pralni-mashyny": "washer",
+  "posudomyini-mashyny": "dishwasher",
+  "posudomyiny-mashyny": "dishwasher",
+};
+
+export function normalizeService(
+  service: string | null | undefined
+): DetectedService | "other" {
+  if (!service) return "other";
+  return SERVICE_SLUGS[service.toLowerCase()] ?? "other";
+}
+
+const KNOWN_BRANDS = [
+  "AEG", "Ariston", "Arderia", "Atlantic", "Beko", "Beretta", "Bosch",
+  "Buderus", "Candy", "Daewoo", "Danko", "Electrolux", "Fagor", "Ferroli",
+  "Gorenje", "Greta", "Hansa", "Hyundai", "Immergas", "Indesit", "Kaiser",
+  "LG", "Miele", "Navien", "Protherm", "Roda", "Samsung", "Sharp", "Siemens",
+  "Sitherm", "Termet", "Thermia", "Toshiba", "Vaillant", "Viessmann",
+  "Whirlpool", "Zanussi",
+];
+
+const BRAND_LOOKUP = new Map(KNOWN_BRANDS.map((brand) => [brand.toLowerCase(), brand]));
+
+export function extractBrandFromText(
+  text: string
+): { brand: string; model?: string } | null {
+  const tokens = text.split(/[^\p{L}\d-]+/u).filter(Boolean);
+  for (const [index, token] of tokens.entries()) {
+    const brand = BRAND_LOOKUP.get(token.toLowerCase());
+    if (!brand) continue;
+    const next = tokens[index + 1];
+    const model =
+      next && /^[\dA-Za-z-]{3,}$/u.test(next) && /\d/.test(next) ? next : undefined;
+    return model ? { brand, model } : { brand };
+  }
+  return null;
+}
+
 export function isValidUkrainianPhone(value: string): boolean {
   const digits = value.replace(/\D/g, "");
   return (digits.length === 10 && digits.startsWith("0")) ||

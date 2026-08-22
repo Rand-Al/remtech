@@ -13,6 +13,7 @@ import {
   extractDeviceDetailsAnswer,
   extractExplicitLocation,
   extractInitialSymptom,
+  extractBrandFromText,
   getLocationAnswer,
   getTermsDecision,
   hasInvalidPhoneCandidate,
@@ -23,6 +24,7 @@ import {
   isValidUkrainianPhone,
   mergeRequestSymptom,
   normalizeManagerReply,
+  normalizeService,
   requestsHumanManager,
   requestsTechnicianVisit,
   shouldAskExactAddress,
@@ -104,6 +106,27 @@ test("stores only the malfunction in the symptom field", () => {
   );
   assert.equal(extractInitialSymptom("Привіт! Пральна машина не гріє воду."), "Пральна машина не гріє воду.");
   assert.equal(extractInitialSymptom("Котёл шумит, но дом ещё не остыл"), "Котёл шумит, но дом ещё не остыл");
+});
+
+test("normalizes page service slugs into internal service keys", () => {
+  assert.equal(normalizeService("kotly"), "boiler-repair");
+  assert.equal(normalizeService("pralni-mashyny"), "washer");
+  assert.equal(normalizeService("posudomyiny-mashyny"), "dishwasher");
+  assert.equal(normalizeService("boiler-cleaning"), "boiler-cleaning");
+  assert.equal(normalizeService("что-то-неизвестное"), "other");
+  assert.equal(normalizeService(undefined), "other");
+});
+
+test("extracts a brand and model code from the first message", () => {
+  assert.deepEqual(extractBrandFromText("Котел Navien не тримає тиск"), {
+    brand: "Navien",
+  });
+  assert.deepEqual(
+    extractBrandFromText("Пральна машина Bosch WLL2416 не зливає воду"),
+    { brand: "Bosch", model: "WLL2416" }
+  );
+  assert.deepEqual(extractBrandFromText("Samsung 6 series"), { brand: "Samsung" });
+  assert.equal(extractBrandFromText("стиралка сломалась"), null);
 });
 
 test("does not treat a refusal as voluntary acceptance of payment terms", () => {
