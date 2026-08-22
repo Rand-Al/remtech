@@ -1,5 +1,5 @@
-import Link from "next/link";
 import type { NavVariant, SiteLang } from "@/components/Header";
+import LangSwitch from "@/components/LangSwitch";
 
 const TEXTS = {
   uk: {
@@ -87,17 +87,12 @@ export default function Footer({
       <div className="footer-bottom">
         <p className="footer-note">© 2026 RemTech</p>
         <a className="footer-policy" href={policyHref}>{t.policy}</a>
-        <div className="footer-language" aria-label={t.langAria}>
-          {lang === "ru" && altLangHref && (
-            <Link href={altLangHref} scroll={false}>UA</Link>
-          )}
-          <button className="is-active" type="button" aria-current="true">
-            {lang === "ru" ? "RU" : "UA"}
-          </button>
-          {lang === "uk" && altLangHref && (
-            <Link href={altLangHref} scroll={false}>RU</Link>
-          )}
-        </div>
+        <LangSwitch
+          lang={lang}
+          altLangHref={altLangHref}
+          className="footer-language"
+          ariaLabel={t.langAria}
+        />
       </div>
     </footer>
   );

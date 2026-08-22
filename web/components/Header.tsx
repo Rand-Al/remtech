@@ -1,5 +1,6 @@
-import Link from "next/link";
 import MobileNav from "@/components/MobileNav";
+import LangSwitch from "@/components/LangSwitch";
+import LangRedirect from "@/components/LangRedirect";
 
 export type NavVariant = "home" | "kotly" | "service";
 export type SiteLang = "uk" | "ru";
@@ -37,6 +38,7 @@ export default function Header({
 
   return (
     <header className="site-header">
+      <LangRedirect lang={lang} altLangHref={altLangHref} />
       <a className="brand" href={homePath} aria-label={t.brand}>
         <span className="brand-mark" aria-hidden="true">R</span>
         <span>RemTech</span>
@@ -69,17 +71,12 @@ export default function Header({
       </nav>
 
       <div className="header-actions">
-        <div className="language-switch" aria-label={t.langAria}>
-          {lang === "ru" && altLangHref && (
-            <Link href={altLangHref} scroll={false}>UA</Link>
-          )}
-          <button className="is-active" type="button" aria-current="true">
-            {lang === "ru" ? "RU" : "UA"}
-          </button>
-          {lang === "uk" && altLangHref && (
-            <Link href={altLangHref} scroll={false}>RU</Link>
-          )}
-        </div>
+        <LangSwitch
+          lang={lang}
+          altLangHref={altLangHref}
+          className="language-switch"
+          ariaLabel={t.langAria}
+        />
         <a className="phone-link" href="tel:+380000000000">+38 000 000 00 00</a>
         <button className="header-chat-button" type="button" data-open-chat>{t.chat}</button>
         <MobileNav variant={variant} lang={lang} />
